@@ -4,7 +4,8 @@ const cors = require('cors');
 const express = require('express');
 const helmet = require('helmet');
 const path = require('path');
-const routes = process.env.DB_DRIVER === 'firestore' ? require('./routes/firestore') : require('./routes');
+const dbDriver = String(process.env.DB_DRIVER || '').trim().toLowerCase();
+const routes = dbDriver === 'firestore' ? require('./routes/firestore') : require('./routes');
 
 const app = express();
 
@@ -33,7 +34,7 @@ app.use((error, req, res, next) => {
       message: 'Database is offline or not responding. Please restart XAMPP MySQL and check the student_attendance_rewards database.',
     });
   }
-  if (process.env.DB_DRIVER === 'firestore' && (error.code || error.errorInfo)) {
+  if (dbDriver === 'firestore' && (error.code || error.errorInfo)) {
     return res.status(error.status || 500).json({
       message: error.message || 'Firestore is offline or not configured correctly. Please check Firebase environment variables.',
     });
