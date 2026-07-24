@@ -5,7 +5,15 @@ const express = require('express');
 const helmet = require('helmet');
 const path = require('path');
 const dbDriver = String(process.env.DB_DRIVER || '').trim().toLowerCase();
-const routes = dbDriver === 'firestore' ? require('./routes/firestore') : require('./routes');
+let routes;
+let startupError = null;
+
+try {
+  routes = dbDriver === 'firestore' ? require('./routes/firestore') : require('./routes');
+} catch (error) {
+  startupError = error;
+  console.error('API startup failed:', error);
+}
 
 const app = express();
 
@@ -13,11 +21,26 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/api', routes);
 
 app.get('/api/status', (req, res) => {
-  res.json({ name: 'Student Attendance Rewards API', status: 'ok' });
+  res.json({
+    name: 'Student Attendance Rewards API',
+    status: routes ? 'ok' : 'startup_error',
+    driver: dbDriver || 'mysql',
+    detail: startupError?.message || null,
+  });
 });
+
+if (routes) {
+  app.use('/api', routes);
+} else {
+  app.use('/api', (req, res) => {
+    res.status(500).json({
+      message: 'API startup failed. Please check Vercel environment variables and deployment logs.',
+      detail: startupError?.message || 'Unknown startup error.',
+    });
+  });
+}
 
 app.use((req, res) => {
   if (!req.path.startsWith('/api')) {
