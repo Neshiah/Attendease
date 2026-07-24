@@ -5,6 +5,12 @@ function privateKey() {
   return (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 }
 
+function projectId() {
+  const value = String(process.env.FIREBASE_PROJECT_ID || '').trim();
+  const match = value.match(/projects\/\s*([^/]+)/);
+  return match ? match[1].trim() : value;
+}
+
 function serviceAccount() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
     return JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'));
@@ -13,8 +19,8 @@ function serviceAccount() {
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   }
   return {
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    projectId: projectId(),
+    clientEmail: String(process.env.FIREBASE_CLIENT_EMAIL || '').trim(),
     privateKey: privateKey(),
   };
 }
