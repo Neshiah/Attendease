@@ -4,7 +4,13 @@ const cors = require('cors');
 const express = require('express');
 const helmet = require('helmet');
 const path = require('path');
-const dbDriver = String(process.env.DB_DRIVER || '').trim().toLowerCase();
+const requestedDriver = String(process.env.DB_DRIVER || '').trim().toLowerCase();
+const hasFirestoreConfig = Boolean(
+  process.env.FIREBASE_SERVICE_ACCOUNT_BASE64
+    || process.env.FIREBASE_SERVICE_ACCOUNT
+    || (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY),
+);
+const dbDriver = requestedDriver || (hasFirestoreConfig ? 'firestore' : 'mysql');
 let routes;
 let startupError = null;
 
@@ -54,7 +60,9 @@ app.use((error, req, res, next) => {
   const dbErrors = ['ETIMEDOUT', 'ECONNREFUSED', 'PROTOCOL_CONNECTION_LOST', 'ER_BAD_DB_ERROR'];
   if (dbErrors.includes(error.code)) {
     return res.status(503).json({
-      message: 'Database is offline or not responding. Please restart XAMPP MySQL and check the student_attendance_rewards database.',
+      message: process.env.VERCEL
+        ? 'Database is offline or not configured for Vercel. Set DB_DRIVER=firestore and add Firebase environment variables.'
+        : 'Database is offline or not responding. Please restart XAMPP MySQL and check the student_attendance_rewards database.',
     });
   }
   if (dbDriver === 'firestore' && (error.code || error.errorInfo)) {
