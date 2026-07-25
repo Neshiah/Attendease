@@ -597,6 +597,14 @@ function renderShell() {
           <button class="secondary" id="logoutBtn">Logout</button>
         </div>
       </header>
+      <section class="top-search">
+        <label>Find page
+          <input id="pageSearchInput" list="pageSearchOptions" placeholder="Search Dashboard, Officers, Attendance..." />
+        </label>
+        <datalist id="pageSearchOptions">
+          ${items.map(([key, label]) => `<option value="${esc(label)}"></option>`).join('')}
+        </datalist>
+      </section>
       <div class="layout">
         <nav class="sidebar">
           ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
@@ -608,6 +616,26 @@ function renderShell() {
   document.querySelector('#logoutBtn').addEventListener('click', logout);
   document.querySelector('#menuToggle').addEventListener('click', () => {
     state.menuOpen = !state.menuOpen;
+    renderShell();
+  });
+  const pageSearchInput = document.querySelector('#pageSearchInput');
+  pageSearchInput.addEventListener('change', () => {
+    const query = pageSearchInput.value.toLowerCase().trim();
+    const match = items.find(([key, label]) => label.toLowerCase() === query || label.toLowerCase().includes(query));
+    if (!match) return;
+    state.active = match[0];
+    state.menuOpen = false;
+    resetEditing();
+    renderShell();
+  });
+  pageSearchInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    const query = pageSearchInput.value.toLowerCase().trim();
+    const match = items.find(([key, label]) => label.toLowerCase().includes(query));
+    if (!match) return;
+    state.active = match[0];
+    state.menuOpen = false;
+    resetEditing();
     renderShell();
   });
   document.querySelectorAll('[data-view]').forEach((button) => {

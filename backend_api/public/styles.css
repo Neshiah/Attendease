@@ -230,6 +230,13 @@ textarea {
   font-size: 19px;
   letter-spacing: 0;
   margin: 0;
+  min-width: 0;
+}
+
+.topbar h1 span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-dot {
@@ -262,6 +269,28 @@ textarea {
   padding: 14px;
   position: sticky;
   top: 58px;
+}
+
+.top-search {
+  background: rgba(255,255,255,.86);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 10px 24px rgba(36, 52, 78, .05);
+  padding: 10px clamp(14px, 2vw, 22px);
+  position: sticky;
+  top: 55px;
+  z-index: 2;
+}
+
+.top-search label {
+  margin: 0;
+  max-width: 720px;
+}
+
+.top-search input {
+  background: #fff;
+  border-radius: 999px;
+  min-height: 42px;
+  padding-left: 16px;
 }
 
 .nav-btn {
@@ -1208,24 +1237,69 @@ textarea {
   }
 
   .topbar {
-    align-items: start;
-    padding: 10px 14px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
   }
 
   .topbar h1 span {
     display: none;
   }
 
+  .brand-dot {
+    border-radius: 999px;
+    height: 24px;
+    padding: 2px;
+    width: 24px;
+  }
+
   .topbar-actions {
     flex: 1;
+    gap: 6px;
+    justify-content: flex-end;
     min-width: 0;
   }
 
+  .points-chip,
+  .profile-pill,
+  .menu-toggle,
+  #logoutBtn {
+    border-radius: 16px;
+    font-size: 12px;
+    min-height: 34px;
+    padding: 7px 10px;
+  }
+
+  .points-chip {
+    display: grid;
+    gap: 0;
+    line-height: 1.05;
+    min-width: 48px;
+    place-items: center;
+  }
+
   .profile-pill {
-    max-width: 42vw;
+    max-width: 38vw;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .profile-pill small {
+    display: none;
+  }
+
+  .top-search {
+    padding: 8px 10px;
+    top: 51px;
+  }
+
+  .top-search input {
+    min-height: 38px;
+  }
+
+  .top-search label {
+    font-size: 11px;
   }
 
   .sidebar {
