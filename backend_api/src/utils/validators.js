@@ -103,6 +103,8 @@ const hubPostSchema = z.object({
   title: z.string().min(3).max(180),
   category: z.enum(['activity', 'resolution', 'announcement']).default('activity'),
   content: z.string().min(5),
+  image_data: z.string().max(8000000).optional().nullable().or(z.literal('')),
+  image_caption: z.string().max(240).optional().nullable().or(z.literal('')),
   status: z.enum(['draft', 'published', 'archived']).default('published'),
 });
 

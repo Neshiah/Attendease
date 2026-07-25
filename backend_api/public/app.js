@@ -866,6 +866,22 @@ function hubPostFormHtml(row = null) {
         </label>
       </div>
       <label>Details <textarea name="content" required>${esc(row?.content || '')}</textarea></label>
+      <section class="hub-image-uploader">
+        <input type="hidden" name="image_data" id="hubImageData" value="${esc(row?.image_data || '')}" />
+        <div class="hub-image-preview" id="hubImagePreview">
+          ${row?.image_data ? `<img src="${row.image_data}" alt="Information post image preview" />` : '<span>No image selected</span>'}
+        </div>
+        <div>
+          <label>Post Picture
+            <input id="hubImageFile" type="file" accept="image/png,image/jpeg,image/webp" />
+          </label>
+          <label>Caption <input name="image_caption" maxlength="240" value="${esc(row?.image_caption || '')}" placeholder="Short caption for the picture" /></label>
+          <div class="actions">
+            <button type="button" class="secondary" id="removeHubImage">Remove Picture</button>
+          </div>
+          <p class="hint">Accepted: JPG, PNG, WEBP. Max 5MB.</p>
+        </div>
+      </section>
       <div class="actions">
         <button type="submit">${editing ? 'Update Post' : 'Publish Post'}</button>
         ${editing ? '<button type="button" class="secondary" id="cancelPostEdit">Cancel</button>' : ''}
@@ -876,7 +892,7 @@ function hubPostFormHtml(row = null) {
 
 function hubPostCard(row) {
   return `
-    <article class="record hub-post" data-search-row="${searchable(`${row.title} ${row.category} ${row.content} ${row.author_name} ${row.status}`)}">
+    <article class="record hub-post" data-search-row="${searchable(`${row.title} ${row.category} ${row.content} ${row.image_caption || ''} ${row.author_name} ${row.status}`)}">
       <div>
         <div class="actions">
           ${badge(row.category)}
@@ -884,6 +900,12 @@ function hubPostCard(row) {
         </div>
         <h3>${esc(row.title)}</h3>
         <p>${esc(row.content)}</p>
+        ${row.image_data ? `
+          <figure class="hub-media">
+            <img src="${row.image_data}" alt="${esc(row.image_caption || row.title)}" />
+            ${row.image_caption ? `<figcaption>${esc(row.image_caption)}</figcaption>` : ''}
+          </figure>
+        ` : ''}
         <p class="muted">Posted by ${esc(row.author_name)} | ${esc(row.created_at)}</p>
         <div class="comment-list hidden" id="comments-${row.id}"></div>
       </div>
@@ -923,6 +945,24 @@ function bindHubPostForm(posts) {
       state.editingPost = posts.find((row) => Number(row.id) === Number(button.dataset.editPost));
       renderInformationHub();
     });
+  });
+  document.querySelector('#hubImageFile')?.addEventListener('change', async (event) => {
+    const file = event.currentTarget.files[0];
+    if (!file) return;
+    try {
+      if (file.size > 5 * 1024 * 1024) throw new Error('Information hub image must be 5MB or smaller.');
+      const dataUrl = await readFileAsDataUrl(file);
+      document.querySelector('#hubImageData').value = dataUrl;
+      document.querySelector('#hubImagePreview').innerHTML = `<img src="${dataUrl}" alt="Information post image preview" />`;
+    } catch (error) {
+      toast(error.message);
+      event.currentTarget.value = '';
+    }
+  });
+  document.querySelector('#removeHubImage')?.addEventListener('click', () => {
+    document.querySelector('#hubImageData').value = '';
+    document.querySelector('#hubImageFile').value = '';
+    document.querySelector('#hubImagePreview').innerHTML = '<span>No image selected</span>';
   });
 }
 

@@ -167,6 +167,8 @@ async function ensureCommunityTables() {
       title VARCHAR(180) NOT NULL,
       category ENUM('activity', 'resolution', 'announcement') NOT NULL DEFAULT 'activity',
       content TEXT NOT NULL,
+      image_data LONGTEXT NULL,
+      image_caption VARCHAR(240) NULL,
       status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
       created_by INT NOT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -174,6 +176,8 @@ async function ensureCommunityTables() {
       CONSTRAINT fk_info_posts_user FOREIGN KEY (created_by) REFERENCES users(id)
     )`,
   );
+  await ensureColumn('information_posts', 'image_data', 'LONGTEXT NULL', 'content');
+  await ensureColumn('information_posts', 'image_caption', 'VARCHAR(240) NULL', 'image_data');
   await ensureTable(
     'information_post_likes',
     `CREATE TABLE information_post_likes (
@@ -1007,8 +1011,8 @@ router.get('/hub/posts', authenticate, asyncHandler(async (req, res) => {
 router.post('/hub/posts', authenticate, authorize('admin'), validate(hubPostSchema), asyncHandler(async (req, res) => {
   await ensureCommunityTables();
   const [result] = await pool.query(
-    'INSERT INTO information_posts (title, category, content, status, created_by) VALUES (?, ?, ?, ?, ?)',
-    [req.body.title, req.body.category, req.body.content, req.body.status, req.user.id],
+    'INSERT INTO information_posts (title, category, content, image_data, image_caption, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [req.body.title, req.body.category, req.body.content, req.body.image_data || null, req.body.image_caption || null, req.body.status, req.user.id],
   );
   res.status(201).json({ message: 'Information post published.', id: result.insertId });
 }));
@@ -1016,8 +1020,8 @@ router.post('/hub/posts', authenticate, authorize('admin'), validate(hubPostSche
 router.put('/hub/posts/:id', authenticate, authorize('admin'), validate(idParam, 'params'), validate(hubPostSchema), asyncHandler(async (req, res) => {
   await ensureCommunityTables();
   await pool.query(
-    'UPDATE information_posts SET title = ?, category = ?, content = ?, status = ? WHERE id = ?',
-    [req.body.title, req.body.category, req.body.content, req.body.status, req.params.id],
+    'UPDATE information_posts SET title = ?, category = ?, content = ?, image_data = ?, image_caption = ?, status = ? WHERE id = ?',
+    [req.body.title, req.body.category, req.body.content, req.body.image_data || null, req.body.image_caption || null, req.body.status, req.params.id],
   );
   res.json({ message: 'Information post updated.' });
 }));
