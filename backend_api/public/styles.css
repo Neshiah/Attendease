@@ -821,6 +821,204 @@ textarea {
   width: 86px;
 }
 
+.student-app-shell {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.86), rgba(241, 248, 255, .96)),
+    radial-gradient(circle at 12% 6%, rgba(253, 186, 116, .24), transparent 24vw),
+    radial-gradient(circle at 86% 10%, rgba(196, 181, 253, .25), transparent 24vw),
+    radial-gradient(circle at 72% 88%, rgba(187, 247, 208, .28), transparent 28vw);
+}
+
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.points-chip,
+.profile-pill {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  display: inline-flex;
+  font-weight: 900;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 13px;
+}
+
+.points-chip {
+  background: #f7edff;
+  border-color: #ead7ff;
+  color: #6d28d9;
+}
+
+.profile-pill small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.nav-icon {
+  align-items: center;
+  background: #f5f0ff;
+  border: 1px solid #eadcff;
+  border-radius: 12px;
+  color: #7c3aed;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 900;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.nav-btn.active .nav-icon,
+.nav-btn:hover .nav-icon {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+.student-hero {
+  align-items: end;
+  background:
+    linear-gradient(135deg, #fff4c4, #fbd3ff 48%, #d7e9ff);
+  border: 1px solid rgba(255,255,255,.78);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 16px;
+  overflow: hidden;
+  padding: clamp(20px, 4vw, 34px);
+  position: relative;
+}
+
+.student-hero::after {
+  background: rgba(255,255,255,.28);
+  border-radius: 36px;
+  bottom: -44px;
+  content: "";
+  height: 150px;
+  position: absolute;
+  right: 12%;
+  transform: rotate(-10deg);
+  width: 150px;
+}
+
+.student-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.eyebrow {
+  color: #6b7280;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 2px;
+}
+
+.student-hero h2 {
+  font-size: clamp(34px, 6vw, 58px);
+  line-height: 1;
+  margin: 0;
+}
+
+.student-hero p {
+  color: #374151;
+  font-size: 16px;
+  margin: 12px 0 0;
+  max-width: 560px;
+}
+
+.hero-points {
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 20px;
+  box-shadow: 0 18px 42px rgba(88, 28, 135, .12);
+  display: grid;
+  min-width: 150px;
+  padding: 16px;
+  text-align: center;
+}
+
+.hero-points span,
+.hero-points small {
+  color: #6b7280;
+  font-weight: 800;
+}
+
+.hero-points strong {
+  color: #7c3aed;
+  font-size: 42px;
+  line-height: 1;
+}
+
+.student-app-shell .metric-card:nth-child(1),
+.student-app-shell .record:nth-child(4n + 1) {
+  background: #fff2d7;
+}
+
+.student-app-shell .metric-card:nth-child(2),
+.student-app-shell .record:nth-child(4n + 2) {
+  background: #e6f1ff;
+}
+
+.student-app-shell .metric-card:nth-child(3),
+.student-app-shell .record:nth-child(4n + 3) {
+  background: #f3dcff;
+}
+
+.student-app-shell .record:nth-child(4n + 4) {
+  background: #fff0fa;
+}
+
+.scanner-panel {
+  background: linear-gradient(180deg, #ffffff, #f6fbff);
+}
+
+.scanner-frame {
+  background: #111827;
+  border-radius: 18px;
+  overflow: hidden;
+  position: relative;
+}
+
+.scanner-frame video {
+  display: block;
+}
+
+.scanner-corners {
+  border: 3px solid rgba(255,255,255,.86);
+  border-radius: 22px;
+  box-shadow: 0 0 0 999px rgba(17, 24, 39, .18);
+  height: min(62%, 280px);
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(72%, 360px);
+}
+
+.scan-live-badge {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 999px;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -867,6 +1065,27 @@ textarea {
     padding: 28px;
   }
 
+  .topbar {
+    align-items: start;
+    padding: 10px 14px;
+  }
+
+  .topbar h1 span {
+    display: none;
+  }
+
+  .topbar-actions {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .profile-pill {
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .sidebar {
     display: flex;
     gap: 8px;
@@ -877,6 +1096,70 @@ textarea {
   .nav-btn {
     white-space: nowrap;
     width: auto;
+  }
+
+  .student-app-shell .content {
+    margin: 0 auto;
+    max-width: 520px;
+    padding: 16px 14px 96px;
+  }
+
+  .student-app-shell .sidebar {
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(217, 222, 232, .9);
+    border-radius: 24px;
+    bottom: 14px;
+    box-shadow: 0 16px 44px rgba(31, 41, 55, .18);
+    left: 50%;
+    max-width: calc(100vw - 28px);
+    min-height: 0;
+    padding: 8px;
+    position: fixed;
+    right: auto;
+    top: auto;
+    transform: translateX(-50%);
+    width: auto;
+    z-index: 4;
+  }
+
+  .student-app-shell .nav-btn {
+    border-radius: 18px;
+    display: grid;
+    font-size: 11px;
+    gap: 3px;
+    justify-items: center;
+    min-width: 62px;
+    padding: 7px 8px;
+    text-align: center;
+  }
+
+  .student-app-shell .nav-btn span:last-child {
+    max-width: 58px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .student-app-shell .nav-icon {
+    height: 28px;
+    width: 28px;
+  }
+
+  .student-hero {
+    grid-template-columns: 1fr;
+    padding: 22px;
+  }
+
+  .hero-points {
+    justify-self: stretch;
+  }
+
+  .quick-actions button,
+  .actions button {
+    flex: 1 1 auto;
+  }
+
+  .qr-scanner-box video {
+    min-height: 220px;
   }
 
   .record {

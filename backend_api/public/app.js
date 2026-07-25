@@ -66,6 +66,24 @@ const navByRole = {
   ],
 };
 
+const navShortLabels = {
+  dashboard: 'Home',
+  hub: 'Hub',
+  officers: 'Team',
+  events: 'Events',
+  scan: 'Scan',
+  feedback: 'Feedback',
+  wallet: 'Wallet',
+  redeem: 'Redeem',
+  history: 'History',
+  notifications: 'Alerts',
+  profile: 'Profile',
+};
+
+function navIcon(key, label) {
+  return `<span class="nav-icon" aria-hidden="true">${esc((navShortLabels[key] || label).slice(0, 2))}</span>`;
+}
+
 function saveSession(data) {
   state.token = data.token;
   state.user = data.user;
@@ -524,17 +542,18 @@ function renderStudentRegistration() {
 function renderShell() {
   const items = navByRole[state.user.role] || navByRole.student;
   app.innerHTML = `
-    <section class="app-shell">
+    <section class="app-shell ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
-        <h1>${brandLogo('AR', 'dot')} ${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</h1>
-        <div>
-          <span class="muted">${esc(state.user.name)} (${esc(state.user.role)})</span>
+        <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
+        <div class="topbar-actions">
+          ${state.user.role === 'student' ? '<span class="points-chip" id="topPointsChip">0 pts</span>' : ''}
+          <span class="profile-pill">${esc(state.user.name)} <small>${esc(state.user.role)}</small></span>
           <button class="secondary" id="logoutBtn">Logout</button>
         </div>
       </header>
       <div class="layout">
         <nav class="sidebar">
-          ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${label}</button>`).join('')}
+          ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
         </nav>
         <section class="content" id="content"></section>
       </div>
@@ -548,7 +567,20 @@ function renderShell() {
       renderShell();
     });
   });
+  hydrateStudentTopPoints();
   renderView();
+}
+
+async function hydrateStudentTopPoints() {
+  if (state.user.role !== 'student' || !state.user.student_id) return;
+  try {
+    const balance = await api(`/points/balance/${state.user.student_id}`);
+    const chip = document.querySelector('#topPointsChip');
+    if (chip) chip.textContent = `${balance.balance} pts`;
+  } catch (error) {
+    const chip = document.querySelector('#topPointsChip');
+    if (chip) chip.textContent = '0 pts';
+  }
 }
 
 function setContent(html) {
@@ -595,7 +627,18 @@ async function renderDashboard() {
       api('/printing/redemptions').catch(() => []),
     ]);
     setContent(`
-      ${pageHeader('Student Dashboard', 'Campus information, events, points, and printing rewards.')}
+      <section class="student-hero">
+        <div>
+          <span class="eyebrow">Hello</span>
+          <h2>${esc(state.user.name)}</h2>
+          <p>Track attendance, campus updates, rewards, and free printing in one place.</p>
+        </div>
+        <div class="hero-points">
+          <span>Reward Points</span>
+          <strong>${esc(balance.balance)}</strong>
+          <small>${Math.floor(balance.balance / 10)} printable pages</small>
+        </div>
+      </section>
       <div class="grid three">
         ${metricCard('Points Balance', balance.balance, 'Available reward points', 'teal')}
         ${metricCard('Events', events.length, 'Upcoming and active events', 'blue')}
@@ -1323,10 +1366,19 @@ async function renderQr() {
 function renderScan() {
   setContent(`
     ${pageHeader('Attendance QR Scanner', 'Scan the event QR code or use the fallback entry options.')}
-    <section class="panel">
-      <h2>Camera QR Scanner</h2>
+    <section class="panel scanner-panel">
+      <div class="feed-title">
+        <div>
+          <h2>Camera QR Scanner</h2>
+          <p class="hint">Use HTTPS on phones and allow camera permission when asked.</p>
+        </div>
+        <span class="scan-live-badge">Ready</span>
+      </div>
       <div class="camera-box qr-scanner-box">
-        <video id="qrVideo" autoplay playsinline></video>
+        <div class="scanner-frame">
+          <video id="qrVideo" autoplay playsinline muted></video>
+          <span class="scanner-corners" aria-hidden="true"></span>
+        </div>
         <div class="actions">
           <button type="button" id="startQrCamera">Start Camera Scan</button>
           <button type="button" class="secondary" id="stopQrCamera">Stop Camera</button>
