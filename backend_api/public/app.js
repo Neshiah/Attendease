@@ -405,6 +405,7 @@ function renderForgotPassword() {
         <h2>Reset Password</h2>
         <label>Email <input id="resetEmail" type="email" required /></label>
         <button type="button" id="sendResetCode">Send Code</button>
+        <p class="hint reset-code-note" id="resetCodeHint">The reset code expires after 15 minutes.</p>
         <label>Verification Code <input id="resetCode" required /></label>
         <label>New Password
           <span class="password-control">
@@ -422,8 +423,14 @@ function renderForgotPassword() {
     try {
       const data = await api('/password/forgot', {
         method: 'POST',
-        body: JSON.stringify({ email: document.querySelector('#resetEmail').value.trim() }),
+        body: JSON.stringify({ email: document.querySelector('#resetEmail').value.trim().toLowerCase() }),
       });
+      if (data.dev_code) {
+        document.querySelector('#resetCode').value = data.dev_code;
+        document.querySelector('#resetCodeHint').innerHTML = `Testing code: <strong>${esc(data.dev_code)}</strong>`;
+      } else {
+        document.querySelector('#resetCodeHint').textContent = data.message;
+      }
       toast(data.dev_code ? `Reset code: ${data.dev_code}` : data.message);
     } catch (error) {
       toast(error.message);
@@ -435,7 +442,7 @@ function renderForgotPassword() {
       await api('/password/reset', {
         method: 'POST',
         body: JSON.stringify({
-          email: document.querySelector('#resetEmail').value.trim(),
+          email: document.querySelector('#resetEmail').value.trim().toLowerCase(),
           code: document.querySelector('#resetCode').value.trim(),
           password: document.querySelector('#newPassword').value,
         }),
@@ -896,7 +903,7 @@ function bindHubActions() {
     button.addEventListener('click', async () => {
       try {
         await api(`/hub/posts/${button.dataset.likePost}/like`, { method: 'POST', body: '{}' });
-        renderInformationHub();
+        renderView();
       } catch (error) {
         toast(error.message);
       }
@@ -913,7 +920,7 @@ function bindHubActions() {
       try {
         await api(`/hub/posts/${button.dataset.deletePost}`, { method: 'DELETE' });
         toast('Information post deleted.');
-        renderInformationHub();
+        renderView();
       } catch (error) {
         toast(error.message);
       }

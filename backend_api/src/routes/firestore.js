@@ -137,10 +137,14 @@ function makeCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
 async function createEmailCode(email, purpose) {
   const code = makeCode();
   await createDoc('email_verification_codes', {
-    email,
+    email: normalizeEmail(email),
     code,
     purpose,
     is_used: false,
@@ -151,8 +155,9 @@ async function createEmailCode(email, purpose) {
 }
 
 async function verifyEmailCode(email, code, purpose, markUsed = true) {
+  const normalizedEmail = normalizeEmail(email);
   const codes = await listDocs('email_verification_codes', (row) => (
-    row.email === email && row.code === code && row.purpose === purpose && !row.is_used && Number(row.expires_at) > Date.now()
+    normalizeEmail(row.email) === normalizedEmail && row.code === code && row.purpose === purpose && !row.is_used && Number(row.expires_at) > Date.now()
   ));
   const row = codes.sort((a, b) => Number(b.id) - Number(a.id))[0];
   if (!row) return false;
@@ -160,8 +165,27 @@ async function verifyEmailCode(email, code, purpose, markUsed = true) {
   return true;
 }
 
-async function sendEmailCode() {
-  return false;
+async function sendEmailCode(email, code, purpose) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return false;
+  let nodemailer;
+  try {
+    nodemailer = require('nodemailer');
+  } catch (error) {
+    return false;
+  }
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: normalizeEmail(email),
+    subject: purpose === 'password_reset' ? 'Password reset code' : 'Student registration verification code',
+    text: `Your verification code is ${code}. It expires in 15 minutes.`,
+  });
+  return true;
 }
 
 function safeFile(payload) {
@@ -196,15 +220,16 @@ router.get('/registration/qr', authenticate, authorize('admin'), asyncHandler(as
 router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(async (req, res) => {
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
-  const code = await createEmailCode(req.body.email, 'registration');
-  const sent = await sendEmailCode(req.body.email, code, 'registration');
+  const email = normalizeEmail(req.body.email);
+  const code = await createEmailCode(email, 'registration');
+  const sent = await sendEmailCode(email, code, 'registration');
   res.json({ message: sent ? 'Verification code sent to email.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
 router.post('/registration/verify-code', validate(verifyEmailCodeSchema), asyncHandler(async (req, res) => {
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
-  const ok = await verifyEmailCode(req.body.email, req.body.code, 'registration', false);
+  const ok = await verifyEmailCode(normalizeEmail(req.body.email), req.body.code, 'registration', false);
   if (!ok) return res.status(400).json({ message: 'Invalid or expired verification code.' });
   res.json({ message: 'Email verified.' });
 }));
@@ -212,12 +237,13 @@ router.post('/registration/verify-code', validate(verifyEmailCodeSchema), asyncH
 router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(async (req, res) => {
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
-  const ok = await verifyEmailCode(req.body.email, req.body.email_code, 'registration', true);
+  const email = normalizeEmail(req.body.email);
+  const ok = await verifyEmailCode(email, req.body.email_code, 'registration', true);
   if (!ok) return res.status(400).json({ message: 'Please verify your Gmail before submitting registration.' });
   const hashed = await bcrypt.hash(req.body.password, 10);
   const userId = await createDoc('users', {
     name: req.body.name,
-    email: req.body.email,
+    email,
     password: hashed,
     role: 'student',
     status: 'active',
@@ -272,17 +298,20 @@ router.post('/setup/admin', asyncHandler(async (req, res) => {
 }));
 
 router.post('/password/forgot', validate(emailCodeSchema), asyncHandler(async (req, res) => {
-  const user = await firstWhere('users', 'email', req.body.email);
-  if (!user) return res.status(404).json({ message: 'Email address not found.' });
-  const code = await createEmailCode(req.body.email, 'password_reset');
-  res.json({ message: 'Password reset code generated for local testing.', sent: false, dev_code: code });
+  const email = normalizeEmail(req.body.email);
+  const user = await firstWhere('users', 'email', email);
+  if (!user || user.status !== 'active') return res.status(404).json({ message: 'No active account found for that email.' });
+  const code = await createEmailCode(email, 'password_reset');
+  const sent = await sendEmailCode(email, code, 'password_reset');
+  res.json({ message: sent ? 'Password reset code sent to email.' : 'Password reset code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
 router.post('/password/reset', validate(passwordResetSchema), asyncHandler(async (req, res) => {
-  const ok = await verifyEmailCode(req.body.email, req.body.code, 'password_reset', true);
+  const email = normalizeEmail(req.body.email);
+  const ok = await verifyEmailCode(email, req.body.code, 'password_reset', true);
   if (!ok) return res.status(400).json({ message: 'Invalid or expired reset code.' });
-  const user = await firstWhere('users', 'email', req.body.email);
-  if (!user) return res.status(404).json({ message: 'Email address not found.' });
+  const user = await firstWhere('users', 'email', email);
+  if (!user || user.status !== 'active') return res.status(404).json({ message: 'No active account found for that email.' });
   await updateDoc('users', user.id, { password: await bcrypt.hash(req.body.password, 10) });
   res.json({ message: 'Password updated. You can now login.' });
 }));

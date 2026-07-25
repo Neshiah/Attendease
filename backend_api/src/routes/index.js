@@ -292,21 +292,26 @@ function makeCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
 async function createEmailCode(email, purpose) {
   const code = makeCode();
   await pool.query(
     'INSERT INTO email_verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))',
-    [email, code, purpose],
+    [normalizeEmail(email), code, purpose],
   );
   return code;
 }
 
 async function verifyEmailCode(email, code, purpose, markUsed = true) {
+  const normalizedEmail = normalizeEmail(email);
   const [[row]] = await pool.query(
     `SELECT id FROM email_verification_codes
      WHERE email = ? AND code = ? AND purpose = ? AND is_used = FALSE AND expires_at > NOW()
      ORDER BY id DESC LIMIT 1`,
-    [email, code, purpose],
+    [normalizedEmail, code, purpose],
   );
   if (!row) return false;
   if (markUsed) {
@@ -332,7 +337,7 @@ async function sendEmailCode(email, code, purpose) {
   });
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: email,
+    to: normalizeEmail(email),
     subject: purpose === 'password_reset' ? 'Password reset code' : 'Student registration verification code',
     text: `Your verification code is ${code}. It expires in 15 minutes.`,
   });
@@ -351,8 +356,9 @@ router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(a
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   await ensureRegistrationTables();
-  const code = await createEmailCode(req.body.email, 'registration');
-  const sent = await sendEmailCode(req.body.email, code, 'registration');
+  const email = normalizeEmail(req.body.email);
+  const code = await createEmailCode(email, 'registration');
+  const sent = await sendEmailCode(email, code, 'registration');
   res.json({ message: sent ? 'Verification code sent to email.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
@@ -360,7 +366,7 @@ router.post('/registration/verify-code', validate(verifyEmailCodeSchema), asyncH
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   await ensureRegistrationTables();
-  const ok = await verifyEmailCode(req.body.email, req.body.code, 'registration', false);
+  const ok = await verifyEmailCode(normalizeEmail(req.body.email), req.body.code, 'registration', false);
   if (!ok) return res.status(400).json({ message: 'Invalid or expired verification code.' });
   res.json({ message: 'Email verified.' });
 }));
@@ -369,7 +375,8 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   await ensureRegistrationTables();
-  const ok = await verifyEmailCode(req.body.email, req.body.email_code, 'registration', true);
+  const email = normalizeEmail(req.body.email);
+  const ok = await verifyEmailCode(email, req.body.email_code, 'registration', true);
   if (!ok) return res.status(400).json({ message: 'Please verify your Gmail before submitting registration.' });
   if (req.body.liveness_passed !== 'true') {
     return res.status(400).json({ message: 'Please complete the face liveness check before submitting registration.' });
@@ -382,7 +389,7 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
     const hashed = await bcrypt.hash(req.body.password, 10);
     const [userResult] = await connection.query(
       'INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)',
-      [req.body.name, req.body.email, hashed, 'student', 'active'],
+      [req.body.name, email, hashed, 'student', 'active'],
     );
     const [studentResult] = await connection.query(
       `INSERT INTO students
@@ -439,19 +446,23 @@ router.put('/settings', authenticate, authorize('admin'), validate(settingsSchem
 
 router.post('/password/forgot', validate(emailCodeSchema), asyncHandler(async (req, res) => {
   await ensureRegistrationTables();
-  const [[user]] = await pool.query('SELECT id FROM users WHERE email = ? AND status = ?', [req.body.email, 'active']);
+  const email = normalizeEmail(req.body.email);
+  const [[user]] = await pool.query('SELECT id FROM users WHERE email = ? AND status = ?', [email, 'active']);
   if (!user) return res.status(404).json({ message: 'No active account found for that email.' });
-  const code = await createEmailCode(req.body.email, 'password_reset');
-  const sent = await sendEmailCode(req.body.email, code, 'password_reset');
+  const code = await createEmailCode(email, 'password_reset');
+  const sent = await sendEmailCode(email, code, 'password_reset');
   res.json({ message: sent ? 'Password reset code sent to email.' : 'Password reset code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
 router.post('/password/reset', validate(passwordResetSchema), asyncHandler(async (req, res) => {
   await ensureRegistrationTables();
-  const ok = await verifyEmailCode(req.body.email, req.body.code, 'password_reset', true);
+  const email = normalizeEmail(req.body.email);
+  const ok = await verifyEmailCode(email, req.body.code, 'password_reset', true);
   if (!ok) return res.status(400).json({ message: 'Invalid or expired reset code.' });
+  const [[user]] = await pool.query('SELECT id FROM users WHERE email = ? AND status = ?', [email, 'active']);
+  if (!user) return res.status(404).json({ message: 'No active account found for that email.' });
   const hashed = await bcrypt.hash(req.body.password, 10);
-  await pool.query('UPDATE users SET password = ? WHERE email = ?', [hashed, req.body.email]);
+  await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
   res.json({ message: 'Password updated. You can now login.' });
 }));
 
