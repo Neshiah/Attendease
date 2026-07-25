@@ -452,7 +452,11 @@ router.get('/events/:id/qr', authenticate, authorize('admin', 'organizer'), vali
   const expiresAt = dateTime(event.event_date, event.end_time).toISOString();
   const payload = JSON.stringify({ event_id: event.id, qr_code: event.qr_code, expires_at: expiresAt });
   const image = await QRCode.toDataURL(payload);
-  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, expires_at: expiresAt, image });
+  const response = { event_id: event.id, title: event.title, qr_code: event.qr_code, expires_at: expiresAt, image };
+  if (req.user.role === 'admin') {
+    response.attendance_code = `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`;
+  }
+  res.json(response);
 }));
 
 router.post('/events/:id/like', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {

@@ -677,7 +677,11 @@ router.get('/events/:id/qr', authenticate, authorize('admin', 'organizer'), vali
   if (!event) return res.status(404).json({ message: 'Event not found.' });
   const expiresAt = new Date(`${String(event.event_date).slice(0, 10)}T${String(event.end_time || '00:00').slice(0, 5)}:00`).toISOString();
   const dataUrl = await QRCode.toDataURL(JSON.stringify({ event_id: event.id, qr_code: event.qr_code, expires_at: expiresAt }));
-  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, expires_at: expiresAt, image: dataUrl });
+  const response = { event_id: event.id, title: event.title, qr_code: event.qr_code, expires_at: expiresAt, image: dataUrl };
+  if (req.user.role === 'admin') {
+    response.attendance_code = `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`;
+  }
+  res.json(response);
 }));
 
 router.post('/events/:id/like', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {

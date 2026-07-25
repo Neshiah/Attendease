@@ -1439,8 +1439,10 @@ async function renderQr() {
         document.querySelector(`#qr-${button.dataset.qr}`).innerHTML = `
           <img class="qr" src="${data.image}" alt="Event QR" />
           <p class="hint">Expires exactly at event end time: ${esc(data.expires_at || 'event end time')}</p>
-          <p class="hint">Attendance code for manual entry:</p>
-          <div class="copy-code">${esc(data.attendance_code)}</div>
+          ${data.attendance_code ? `
+            <p class="hint">Attendance code for manual entry (admin only):</p>
+            <div class="copy-code">${esc(data.attendance_code)}</div>
+          ` : '<p class="hint">Manual attendance code is visible to admin only.</p>'}
           <p class="hint">For web testing, copy this QR payload:</p>
           <textarea readonly>${JSON.stringify({ event_id: data.event_id, qr_code: data.qr_code })}</textarea>
         `;
