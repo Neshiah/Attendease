@@ -356,9 +356,6 @@ async function renderLogin() {
     : 'Students can view events, submit attendance, answer feedback, earn points, and redeem free printing.';
   const loginLabel = mode === 'admin' ? 'Email Address' : 'Student ID or Email';
   const hint = mode === 'admin' ? 'Use your assigned admin, organizer, faculty, or printing staff account.' : 'Use your student ID or registered Gmail account.';
-  const switchLink = mode === 'admin'
-    ? '<a href="/student-login">Go to Student Login</a>'
-    : '<a href="/admin-login">Admin / Staff Login</a>';
   const extraLinks = mode === 'student'
     ? '<a href="/student-register">Student QR Registration</a> | <a href="/forgot-password">Forgot Password?</a>'
     : '<a href="/forgot-password">Forgot Password?</a>';
@@ -390,7 +387,6 @@ async function renderLogin() {
         </label>
         <button type="submit">Sign in</button>
         <p class="hint">${hint}</p>
-        <p class="hint">${switchLink}</p>
         <p class="hint">${extraLinks}</p>
       </form>
     </section>
