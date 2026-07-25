@@ -968,16 +968,25 @@ function officerFormHtml(row = null) {
 function officerCard(row) {
   return `
     <article class="officer-card" data-search-row="${searchable(`${row.name} ${row.position} ${row.department} ${row.email} ${row.status}`)}">
-      ${row.photo_data ? `<img class="officer-photo" src="${row.photo_data}" alt="${esc(row.name)}" />` : `<div class="avatar">${esc(row.name).slice(0, 2).toUpperCase()}</div>`}
-      <div>
-        <h3>${esc(row.name)}</h3>
-        <p><strong>${esc(row.position)}</strong></p>
-        ${row.department ? `<p class="muted">${esc(row.department)}</p>` : ''}
-        ${row.term ? `<p class="muted">Term: ${esc(row.term)}</p>` : ''}
-        ${row.email ? `<p class="muted">${esc(row.email)}</p>` : ''}
-        ${row.contact_no ? `<p class="muted">${esc(row.contact_no)}</p>` : ''}
-        ${row.bio ? `<p>${esc(row.bio)}</p>` : ''}
-        ${state.user.role === 'admin' ? `<div class="actions">${badge(row.status)}<button class="secondary" data-edit-officer="${row.id}">Edit</button><button class="danger" data-delete-officer="${row.id}">Deactivate</button></div>` : ''}
+      <div class="officer-media">
+        ${row.photo_data ? `<img class="officer-photo" src="${row.photo_data}" alt="${esc(row.name)}" />` : `<div class="avatar officer-avatar">${esc(row.name).slice(0, 2).toUpperCase()}</div>`}
+      </div>
+      <div class="officer-info">
+        <div class="officer-heading">
+          <div>
+            <h3>${esc(row.name)}</h3>
+            <span class="officer-position">${esc(row.position)}</span>
+          </div>
+          ${badge(row.status)}
+        </div>
+        <div class="officer-details">
+          ${row.department ? `<span><strong>Department</strong>${esc(row.department)}</span>` : ''}
+          ${row.term ? `<span><strong>Term</strong>${esc(row.term)}</span>` : ''}
+          ${row.email ? `<span><strong>Email</strong>${esc(row.email)}</span>` : ''}
+          ${row.contact_no ? `<span><strong>Contact</strong>${esc(row.contact_no)}</span>` : ''}
+        </div>
+        ${row.bio ? `<p class="officer-bio">${esc(row.bio)}</p>` : ''}
+        ${state.user.role === 'admin' ? `<div class="actions officer-actions"><button class="secondary" data-edit-officer="${row.id}">Edit</button><button class="danger" data-delete-officer="${row.id}">Deactivate</button></div>` : ''}
       </div>
     </article>
   `;

@@ -737,19 +737,115 @@ textarea {
 
 .officer-grid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
 .officer-card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow-soft);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.96), rgba(250,252,255,.98)),
+    radial-gradient(circle at 12% 0%, rgba(124, 58, 237, .10), transparent 170px);
+  border: 1px solid rgba(215, 225, 239, .95);
+  border-radius: 24px;
+  box-shadow: 0 22px 60px rgba(31, 41, 55, .12);
   display: grid;
-  gap: 14px;
-  grid-template-columns: auto minmax(0, 1fr);
-  padding: 16px;
+  gap: 18px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  overflow: hidden;
+  padding: 18px;
+  position: relative;
+  transition: transform .18s ease, box-shadow .18s ease, border .18s ease;
+}
+
+.officer-card::before {
+  background: linear-gradient(90deg, #7c3aed, #14b8a6, #f59e0b);
+  content: "";
+  height: 5px;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.officer-card:hover {
+  border-color: rgba(124, 58, 237, .30);
+  box-shadow: 0 26px 72px rgba(31, 41, 55, .16);
+  transform: translateY(-3px);
+}
+
+.officer-media {
+  align-self: start;
+  background: linear-gradient(135deg, #ede9fe, #dcfce7);
+  border-radius: 24px;
+  padding: 6px;
+}
+
+.officer-info {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.officer-heading {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.officer-heading h3 {
+  font-size: 21px;
+  letter-spacing: 0;
+  line-height: 1.15;
+  margin: 0 0 8px;
+}
+
+.officer-position {
+  background: #111827;
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 11px;
+}
+
+.officer-details {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.officer-details span {
+  background: rgba(248, 250, 252, .92);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+  word-break: break-word;
+}
+
+.officer-details strong {
+  color: var(--text);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.officer-bio {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin: 0;
+  padding: 11px 12px;
+}
+
+.officer-actions {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
 }
 
 .settings-panel {
@@ -849,10 +945,18 @@ textarea {
 
 .officer-photo {
   aspect-ratio: 1;
+  border: 3px solid #fff;
   border-radius: 22px;
-  height: 86px;
+  box-shadow: 0 14px 34px rgba(31, 41, 55, .18);
+  display: block;
+  height: 100px;
   object-fit: cover;
-  width: 86px;
+  width: 100px;
+}
+
+.officer-avatar {
+  height: 100px;
+  width: 100px;
 }
 
 .student-app-shell {
@@ -1215,6 +1319,27 @@ textarea {
   .officer-card,
   .logo-settings,
   .settings-toggles {
+    grid-template-columns: 1fr;
+  }
+
+  .officer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .officer-card {
+    padding: 18px;
+  }
+
+  .officer-media {
+    justify-self: start;
+    width: fit-content;
+  }
+
+  .officer-heading {
+    flex-direction: column;
+  }
+
+  .officer-details {
     grid-template-columns: 1fr;
   }
 
