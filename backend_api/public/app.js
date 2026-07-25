@@ -7,6 +7,7 @@ const state = {
   editingUser: null,
   editingPost: null,
   editingOfficer: null,
+  menuOpen: false,
 };
 
 const app = document.querySelector('#app');
@@ -542,12 +543,13 @@ function renderStudentRegistration() {
 function renderShell() {
   const items = navByRole[state.user.role] || navByRole.student;
   app.innerHTML = `
-    <section class="app-shell ${state.user.role === 'student' ? 'student-app-shell' : ''}">
+    <section class="app-shell ${state.user.role === 'student' ? 'student-app-shell' : ''} ${state.menuOpen ? 'menu-open' : ''}">
       <header class="topbar">
         <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
         <div class="topbar-actions">
           ${state.user.role === 'student' ? '<span class="points-chip" id="topPointsChip">0 pts</span>' : ''}
           <span class="profile-pill">${esc(state.user.name)} <small>${esc(state.user.role)}</small></span>
+          <button class="secondary menu-toggle" id="menuToggle" type="button">${state.menuOpen ? 'Hide Menu' : 'Menu'}</button>
           <button class="secondary" id="logoutBtn">Logout</button>
         </div>
       </header>
@@ -560,9 +562,14 @@ function renderShell() {
     </section>
   `;
   document.querySelector('#logoutBtn').addEventListener('click', logout);
+  document.querySelector('#menuToggle').addEventListener('click', () => {
+    state.menuOpen = !state.menuOpen;
+    renderShell();
+  });
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
       state.active = button.dataset.view;
+      state.menuOpen = false;
       resetEditing();
       renderShell();
     });
@@ -658,7 +665,7 @@ async function renderDashboard() {
             <h3>Information Feed</h3>
             <button class="secondary" data-jump="hub">Open Hub</button>
           </div>
-          <div class="hub-feed">${posts.slice(0, 6).map(hubPostCard).join('') || '<p class="muted">No information posts yet.</p>'}</div>
+          <div class="hub-feed dashboard-hub-scroll">${posts.map(hubPostCard).join('') || '<p class="muted">No information posts yet.</p>'}</div>
         </section>
         <aside class="feed-side">
           <section class="panel">
@@ -1041,7 +1048,7 @@ async function renderStudents() {
         <article class="record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.course} ${row.section} ${row.email}`)}">
           <div>
             <h3>${esc(row.name)}</h3>
-            <p class="muted">DB ID: ${row.id} | Student ID: ${esc(row.student_no)} | ${esc(row.course)} ${esc(row.year_level)}-${esc(row.section)}</p>
+            <p class="muted">Student ID: ${esc(row.student_no)} | ${esc(row.course)} ${esc(row.year_level)}-${esc(row.section)}</p>
             <p>Points: <strong>${row.total_points}</strong> | Email: ${esc(row.email)}</p>
           </div>
           <div class="actions">
@@ -1315,7 +1322,7 @@ function eventCard(row) {
       <div>
         <h3>${esc(row.title)}</h3>
         <p>${esc(row.description || '')}</p>
-        <p class="muted">ID: ${row.id} | ${esc(row.event_date)} ${esc(row.start_time)}-${esc(row.end_time)} | ${esc(row.venue)} | ${row.points} pts</p>
+        <p class="muted">${esc(row.event_date)} ${esc(row.start_time)}-${esc(row.end_time)} | ${esc(row.venue)} | ${row.points} pts</p>
       </div>
       <div class="actions">
         ${badge(row.status)}
@@ -1336,7 +1343,7 @@ async function renderQr() {
         <article class="record" data-search-row="${searchable(`${row.title} ${row.venue} ${row.event_date}`)}">
           <div>
             <h3>${esc(row.title)}</h3>
-            <p class="muted">Event ID: ${row.id} | ${esc(row.event_date)} | ${esc(row.venue)}</p>
+            <p class="muted">${esc(row.event_date)} | ${esc(row.venue)}</p>
             <div id="qr-${row.id}"></div>
           </div>
           <button data-qr="${row.id}">Show QR</button>
@@ -1728,7 +1735,11 @@ async function renderPoints() {
     ${pageHeader('Points Management', 'Adjust balances and monitor top point holders.')}
     <form id="pointsForm" class="panel">
       <h2>Adjust Points</h2>
-      <label>Student Database ID <input name="student_id" type="number" min="1" required /></label>
+      <label>Student
+        <select name="student_id" required>
+          ${rows.map((row) => `<option value="${row.student_id}">${esc(row.name)} - ${esc(row.student_no || 'No student ID')}</option>`).join('')}
+        </select>
+      </label>
       <label>Points (+ or -) <input name="points" type="number" required /></label>
       <label>Description <input name="description" value="Manual adjustment" required /></label>
       <button type="submit">Save Adjustment</button>
@@ -1778,7 +1789,7 @@ function printingCard(row) {
     <article class="record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.student_id} ${row.status} ${row.pages_requested}`)}">
       <div>
         <h3>${esc(row.name || `Request #${row.id}`)} - ${row.pages_requested} pages</h3>
-        <p class="muted">ID: ${row.id} | Student: ${esc(row.student_no || row.student_id)} | Points: ${row.points_required}</p>
+        <p class="muted">Student: ${esc(row.student_no || 'Student account')} | Points: ${row.points_required}</p>
         ${row.file_name ? `<p class="muted">File: ${esc(row.file_name)} (${Math.ceil((row.file_size || 0) / 1024)} KB)</p>` : '<p class="muted">No print file attached.</p>'}
         ${badge(status)}
       </div>
@@ -1866,7 +1877,7 @@ async function renderUsers() {
       <article class="record" data-search-row="${searchable(`${row.name} ${row.email} ${row.role} ${row.status}`)}">
         <div>
           <h3>${esc(row.name)}</h3>
-          <p class="muted">ID: ${row.id} | ${esc(row.email)} | ${esc(row.role)}</p>
+          <p class="muted">${esc(row.email)} | ${esc(row.role)}</p>
         </div>
         <div class="actions">
           ${badge(row.status)}
@@ -2059,8 +2070,24 @@ function bindSettingsForm() {
   });
 }
 
+function displayReportEntries(row) {
+  return Object.entries(row).filter(([key]) => {
+    if (key === 'id' || key === 'user_id') return false;
+    if ((key === 'student_id' || key === 'event_id') && (row.student_no || row.title || row.event_title || row.name)) return false;
+    return true;
+  });
+}
+
+function friendlyLabel(key) {
+  return key
+    .replace(/_no$/g, ' number')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function reportMini(row) {
-  return `<p>${Object.entries(row).map(([key, value]) => `<strong>${esc(key)}:</strong> ${esc(value)}`).join(' | ')}</p>`;
+  const entries = displayReportEntries(row);
+  return `<p>${entries.map(([key, value]) => `<strong>${esc(friendlyLabel(key))}:</strong> ${esc(value)}`).join(' | ')}</p>`;
 }
 
 function reportCard(row) {

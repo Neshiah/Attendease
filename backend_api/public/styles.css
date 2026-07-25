@@ -663,6 +663,22 @@ textarea {
   gap: 14px;
 }
 
+.dashboard-hub-scroll {
+  max-height: min(680px, 72vh);
+  overflow-y: auto;
+  padding-right: 4px;
+  scroll-behavior: smooth;
+}
+
+.dashboard-hub-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-hub-scroll::-webkit-scrollbar-thumb {
+  background: #d8c8ff;
+  border-radius: 999px;
+}
+
 .hub-post {
   align-items: start;
 }
@@ -834,6 +850,10 @@ textarea {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.menu-toggle {
+  display: none;
 }
 
 .points-chip,
@@ -1191,5 +1211,41 @@ textarea {
   .profile-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+    justify-content: center;
+  }
+
+  .app-shell .sidebar {
+    display: none;
+  }
+
+  .app-shell.menu-open .sidebar {
+    display: flex;
+    left: 14px;
+    max-height: min(68vh, 520px);
+    overflow: auto;
+    position: sticky;
+    right: 14px;
+    top: 58px;
+    width: calc(100vw - 28px);
+    z-index: 3;
+  }
+
+  .student-app-shell.menu-open .sidebar {
+    bottom: 14px;
+    left: 50%;
+    max-height: 76px;
+    position: fixed;
+    right: auto;
+    top: auto;
+    transform: translateX(-50%);
+    width: auto;
+  }
+
+  .app-shell:not(.menu-open) .sidebar {
+    display: none;
   }
 }
