@@ -11,6 +11,7 @@ const state = {
 
 const app = document.querySelector('#app');
 const isAdminLoginPage = window.location.pathname.startsWith('/admin-login');
+const isStudentLoginPage = window.location.pathname.startsWith('/student-login') || window.location.pathname === '/';
 const isRegisterPage = window.location.pathname.startsWith('/student-register');
 const isForgotPasswordPage = window.location.pathname.startsWith('/forgot-password');
 let cachedBranding = JSON.parse(localStorage.getItem('systemSettings') || 'null');
@@ -348,27 +349,38 @@ async function renderLogin() {
   }
   const mode = isAdminLoginPage ? 'admin' : 'student';
   const title = mode === 'admin' ? 'Admin / Staff Login' : 'Student Login';
+  const portalTitle = mode === 'admin' ? 'Staff Operations Portal' : 'Student Rewards Portal';
+  const brandTitle = mode === 'admin' ? 'Admin / Staff Access' : 'Student Attendance Rewards';
   const description = mode === 'admin'
     ? 'OSA staff, organizers, faculty, and printing staff can manage attendance, feedback, points, reports, and printing requests.'
     : 'Students can view events, submit attendance, answer feedback, earn points, and redeem free printing.';
   const loginLabel = mode === 'admin' ? 'Email Address' : 'Student ID or Email';
-  const hint = mode === 'admin' ? 'Test admin: admin@test.com / password123' : 'Use your student ID and password.';
+  const hint = mode === 'admin' ? 'Use your assigned admin, organizer, faculty, or printing staff account.' : 'Use your student ID or registered Gmail account.';
   const switchLink = mode === 'admin'
-    ? '<a href="/">Go to Student Login</a>'
+    ? '<a href="/student-login">Go to Student Login</a>'
     : '<a href="/admin-login">Admin / Staff Login</a>';
   const extraLinks = mode === 'student'
     ? '<a href="/student-register">Student QR Registration</a> | <a href="/forgot-password">Forgot Password?</a>'
     : '<a href="/forgot-password">Forgot Password?</a>';
+  const featureList = mode === 'admin'
+    ? ['Manage events and QR codes', 'Review reports and redemptions', 'Control system settings']
+    : ['Scan event QR attendance', 'Answer feedback forms', 'Redeem points for printing'];
 
   app.innerHTML = `
-    <section class="auth-shell">
+    <section class="auth-shell auth-${mode}">
       <div class="brand">
         ${brandLogo('AR')}
-        <h1>${esc(cachedBranding?.app_name || title)}</h1>
+        <span class="auth-eyebrow">${esc(cachedBranding?.school_name || 'Campus OSA')}</span>
+        <h1>${esc(brandTitle)}</h1>
         <p>${description}</p>
+        <div class="auth-feature-list">
+          ${featureList.map((item) => `<span>${esc(item)}</span>`).join('')}
+        </div>
       </div>
       <form id="loginForm" class="panel">
+        <span class="auth-form-kicker">${mode === 'admin' ? 'Admin / Staff only' : 'Students only'}</span>
         <h2>${title}</h2>
+        <p class="auth-subtitle">${esc(portalTitle)}</p>
         <label>${loginLabel} <input id="login" required /></label>
         <label>Password
           <span class="password-control">
