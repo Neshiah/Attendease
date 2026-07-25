@@ -82,7 +82,31 @@ const navShortLabels = {
 };
 
 function navIcon(key, label) {
-  return `<span class="nav-icon" aria-hidden="true">${esc((navShortLabels[key] || label).slice(0, 2))}</span>`;
+  const icons = {
+    dashboard: 'HM',
+    hub: 'HB',
+    officers: 'OF',
+    events: 'EV',
+    eventsAdmin: 'EV',
+    scan: 'QR',
+    feedback: 'FB',
+    feedbackAdmin: 'FB',
+    wallet: 'PT',
+    redeem: 'PR',
+    history: 'HS',
+    notifications: 'NT',
+    profile: 'ME',
+    students: 'ST',
+    qr: 'QR',
+    attendance: 'AT',
+    points: 'PT',
+    printing: 'PX',
+    reports: 'RP',
+    reportsPrinting: 'RP',
+    users: 'US',
+    settings: 'SE',
+  };
+  return `<span class="nav-icon" aria-hidden="true">${esc(icons[key] || (navShortLabels[key] || label).slice(0, 2))}</span>`;
 }
 
 function saveSession(data) {
@@ -151,10 +175,11 @@ function pageHeader(title, subtitle, action = '') {
   return `
     <div class="page-head">
       <div>
+        <span class="page-kicker">${esc(state.user?.role || 'system')}</span>
         <h2>${esc(title)}</h2>
         <p>${esc(subtitle)}</p>
       </div>
-      ${action}
+      ${action ? `<div class="page-action">${action}</div>` : ''}
     </div>
   `;
 }
@@ -162,7 +187,7 @@ function pageHeader(title, subtitle, action = '') {
 function searchBox(placeholder = 'Search records') {
   return `
     <div class="list-controls">
-      <label class="search-box">Search <input id="searchInput" placeholder="${esc(placeholder)}" /></label>
+      <label class="search-box">Search <input id="searchInput" placeholder="${esc(placeholder)}" autocomplete="off" /></label>
       <label class="sort-box">Sort
         <select id="sortSelect">
           <option value="">Default</option>
@@ -594,7 +619,7 @@ function renderStudentRegistration() {
 function renderShell() {
   const items = navByRole[state.user.role] || navByRole.student;
   app.innerHTML = `
-    <section class="app-shell ${state.user.role === 'student' ? 'student-app-shell' : ''} ${state.menuOpen ? 'menu-open' : ''}">
+    <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''} ${state.menuOpen ? 'menu-open' : ''}">
       <header class="topbar">
         <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
         <div class="topbar-actions">
@@ -613,7 +638,7 @@ function renderShell() {
         </datalist>
       </section>
       <div class="layout">
-        <nav class="sidebar">
+        <nav class="sidebar" aria-label="Main navigation">
           ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
         </nav>
         <section class="content" id="content"></section>
@@ -744,7 +769,7 @@ async function renderDashboard() {
             <h3>Information Feed</h3>
             <button class="secondary" data-jump="hub">Open Hub</button>
           </div>
-          <div class="hub-feed dashboard-hub-scroll">${posts.map(hubPostCard).join('') || '<p class="muted">No information posts yet.</p>'}</div>
+          <div class="hub-feed dashboard-hub-scroll">${posts.map(hubPostCard).join('') || emptyState('No information posts yet.', 'Admin announcements and resolutions will appear here.')}</div>
         </section>
         <aside class="feed-side">
           <section class="panel">
@@ -752,11 +777,11 @@ async function renderDashboard() {
               <h3>Events</h3>
               <button class="secondary" data-jump="events">All Events</button>
             </div>
-            <div class="card-list">${events.slice(0, 5).map(eventFeedCard).join('') || '<p class="muted">No events posted yet.</p>'}</div>
+            <div class="card-list">${events.slice(0, 5).map(eventFeedCard).join('') || emptyState('No events posted yet.', 'Upcoming and active events will appear here.')}</div>
           </section>
           <section class="panel">
             <h3>Recent Printing Requests</h3>
-            <div class="card-list">${history.slice(0, 3).map(printingCard).join('') || '<p class="muted">No redemption requests yet.</p>'}</div>
+            <div class="card-list">${history.slice(0, 3).map(printingCard).join('') || emptyState('No redemption requests yet.', 'Your recent printing requests will appear here.')}</div>
           </section>
         </aside>
       </div>
@@ -790,6 +815,10 @@ async function renderDashboard() {
   `);
   bindJumpButtons();
   bindSearch();
+}
+
+function emptyState(title, note = '') {
+  return `<div class="empty-state"><strong>${esc(title)}</strong>${note ? `<span>${esc(note)}</span>` : ''}</div>`;
 }
 
 function bindJumpButtons() {
