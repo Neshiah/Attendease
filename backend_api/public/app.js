@@ -160,18 +160,62 @@ function pageHeader(title, subtitle, action = '') {
 }
 
 function searchBox(placeholder = 'Search records') {
-  return `<label class="search-box">Search <input id="searchInput" placeholder="${esc(placeholder)}" /></label>`;
+  return `
+    <div class="list-controls">
+      <label class="search-box">Search <input id="searchInput" placeholder="${esc(placeholder)}" /></label>
+      <label class="sort-box">Sort
+        <select id="sortSelect">
+          <option value="">Default</option>
+          <option value="alpha-asc">Alphabetical A-Z</option>
+          <option value="alpha-desc">Alphabetical Z-A</option>
+          <option value="date-desc">Newest Date</option>
+          <option value="date-asc">Oldest Date</option>
+        </select>
+      </label>
+    </div>
+  `;
 }
 
 function bindSearch() {
   const input = document.querySelector('#searchInput');
-  if (!input) return;
-  input.addEventListener('input', () => {
+  const sort = document.querySelector('#sortSelect');
+  const applySearch = () => {
     const query = input.value.toLowerCase().trim();
     document.querySelectorAll('[data-search-row]').forEach((row) => {
       row.classList.toggle('hidden', query && !row.dataset.searchRow.includes(query));
     });
-  });
+  };
+  const applySort = () => {
+    if (!sort?.value) return;
+    const rows = Array.from(document.querySelectorAll('[data-search-row]'));
+    if (!rows.length) return;
+    const parent = rows[0].parentElement;
+    const value = sort.value;
+    rows.sort((a, b) => {
+      if (value.startsWith('date')) {
+        const dateA = sortableDate(a);
+        const dateB = sortableDate(b);
+        return value.endsWith('asc') ? dateA - dateB : dateB - dateA;
+      }
+      const textA = sortableText(a);
+      const textB = sortableText(b);
+      return value.endsWith('asc') ? textA.localeCompare(textB) : textB.localeCompare(textA);
+    });
+    rows.forEach((row) => parent.appendChild(row));
+  };
+  input?.addEventListener('input', applySearch);
+  sort?.addEventListener('change', applySort);
+}
+
+function sortableText(row) {
+  return (row.querySelector('h3')?.textContent || row.dataset.searchRow || row.textContent || '').trim().toLowerCase();
+}
+
+function sortableDate(row) {
+  const text = `${row.dataset.sortDate || ''} ${row.textContent || ''}`;
+  const match = text.match(/\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?)?/);
+  const value = match ? Date.parse(match[0]) : 0;
+  return Number.isFinite(value) ? value : 0;
 }
 
 function searchable(text) {

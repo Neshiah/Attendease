@@ -564,6 +564,24 @@ textarea {
   min-width: min(320px, 100%);
 }
 
+.list-controls {
+  align-items: end;
+  display: flex;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.list-controls .search-box {
+  flex: 1 1 280px;
+}
+
+.sort-box {
+  flex: 0 1 190px;
+  margin: 0;
+}
+
 .profile-card {
   align-items: center;
   display: flex;
@@ -1176,6 +1194,13 @@ textarea {
   .quick-actions button,
   .actions button {
     flex: 1 1 auto;
+  }
+
+  .list-controls,
+  .list-controls .search-box,
+  .sort-box {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .qr-scanner-box video {
