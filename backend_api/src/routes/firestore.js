@@ -57,7 +57,7 @@ function eventStatus(event) {
   if (event.status === 'cancelled') return 'cancelled';
   const current = new Date();
   if (current < dateTime(event.event_date, event.start_time)) return 'upcoming';
-  if (current <= dateTime(event.event_date, event.end_time)) return 'ongoing';
+  if (current < dateTime(event.event_date, event.end_time)) return 'ongoing';
   return 'completed';
 }
 
@@ -449,9 +449,10 @@ router.delete('/events/:id', authenticate, authorize('admin'), validate(idParam,
 router.get('/events/:id/qr', authenticate, authorize('admin', 'organizer'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
   const event = await getDoc('events', req.params.id);
   if (!event) return res.status(404).json({ message: 'Event not found.' });
-  const payload = JSON.stringify({ event_id: event.id, qr_code: event.qr_code });
+  const expiresAt = dateTime(event.event_date, event.end_time).toISOString();
+  const payload = JSON.stringify({ event_id: event.id, qr_code: event.qr_code, expires_at: expiresAt });
   const image = await QRCode.toDataURL(payload);
-  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, image });
+  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, expires_at: expiresAt, image });
 }));
 
 router.post('/events/:id/like', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -492,7 +493,7 @@ router.post('/attendance/scan', authenticate, authorize('student'), validate(att
   }
   const event = await getDoc('events', eventId);
   if (!event || event.qr_code !== qrCode || eventStatus(event) !== 'ongoing') {
-    return res.status(400).json({ message: 'QR code is invalid or attendance time is closed.' });
+    return res.status(400).json({ message: 'QR code is invalid, expired, or attendance time is closed.' });
   }
   const existing = await listDocs('attendance', (row) => Number(row.student_id) === Number(req.user.student_id) && Number(row.event_id) === Number(eventId));
   if (existing.length) return res.status(409).json({ message: 'Attendance already recorded for this event.' });

@@ -1438,7 +1438,8 @@ async function renderQr() {
         const data = await api(`/events/${button.dataset.qr}/qr`);
         document.querySelector(`#qr-${button.dataset.qr}`).innerHTML = `
           <img class="qr" src="${data.image}" alt="Event QR" />
-          <p class="hint">Attendance code for camera fallback:</p>
+          <p class="hint">Expires exactly at event end time: ${esc(data.expires_at || 'event end time')}</p>
+          <p class="hint">Attendance code for manual entry:</p>
           <div class="copy-code">${esc(data.attendance_code)}</div>
           <p class="hint">For web testing, copy this QR payload:</p>
           <textarea readonly>${JSON.stringify({ event_id: data.event_id, qr_code: data.qr_code })}</textarea>
@@ -1453,12 +1454,12 @@ async function renderQr() {
 
 function renderScan() {
   setContent(`
-    ${pageHeader('Attendance QR Scanner', 'Scan the event QR code or use the fallback entry options.')}
+    ${pageHeader('Attendance QR Scanner', 'Scan the active event QR code before the event end time.')}
     <section class="panel scanner-panel">
       <div class="feed-title">
         <div>
           <h2>Camera QR Scanner</h2>
-          <p class="hint">Use HTTPS on phones and allow camera permission when asked.</p>
+          <p class="hint">Use the HTTPS Vercel link on phones. The QR expires exactly at the event end time.</p>
         </div>
         <span class="scan-live-badge">Ready</span>
       </div>
@@ -1471,23 +1472,18 @@ function renderScan() {
           <button type="button" id="startQrCamera">Start Camera Scan</button>
           <button type="button" class="secondary" id="stopQrCamera">Stop Camera</button>
         </div>
-        <p class="hint" id="qrScanStatus">Allow camera access, then point the camera at the event QR code. Use Chrome or Edge for best results.</p>
+        <p class="hint" id="qrScanStatus">Allow camera access, then point the camera at the event QR code. Keep the QR inside the frame.</p>
       </div>
-      <label>Phone Camera Fallback
-        <input id="qrImageFile" type="file" accept="image/*" capture="environment" />
-        <span class="hint">If live camera is blocked on your phone, tap here and take a photo of the QR code.</span>
-      </label>
     </section>
     <form id="scanForm" class="panel">
       <h2>Manual Attendance Entry</h2>
-      <p class="hint">If camera scanning is not available, type the attendance code shown by the organizer. Example: 1-AB12CD34.</p>
+      <p class="hint">If camera scanning is not available, type the attendance code shown by the organizer before the event ends. Example: 1-AB12CD34.</p>
       <label>Attendance Code <input name="attendance_code" placeholder="1-AB12CD34" /></label>
       <label>Optional QR Payload <textarea name="payload" placeholder='{"event_id":1,"qr_code":"..."}'></textarea></label>
       <button type="submit">Submit Attendance</button>
     </form>
   `);
   bindQrCameraScanner();
-  bindQrImageScanner();
   document.querySelector('#scanForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
@@ -1584,7 +1580,7 @@ function bindQrCameraScanner() {
 
   document.querySelector('#startQrCamera').addEventListener('click', async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      status.textContent = 'Live camera is blocked by this browser/page. On phones, use Phone Camera Fallback or open the app with HTTPS.';
+      status.textContent = 'Live camera is blocked by this browser/page. Open the app using the HTTPS Vercel link or use manual attendance code entry.';
       return;
     }
 
@@ -1640,7 +1636,7 @@ function bindQrCameraScanner() {
     } catch (error) {
       status.textContent = error.message?.includes('QR scanner library')
         ? error.message
-        : 'Camera permission is required. If you are on a phone using HTTP, use Phone Camera Fallback or manual QR entry.';
+        : 'Camera permission is required. If you are on a phone, open the HTTPS Vercel link or use manual attendance code entry.';
       toast('Unable to start camera scanner.');
     }
   });

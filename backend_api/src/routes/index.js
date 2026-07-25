@@ -41,7 +41,7 @@ const eventStatusSql = `
   CASE
     WHEN e.status = 'cancelled' THEN 'cancelled'
     WHEN NOW() < TIMESTAMP(e.event_date, e.start_time) THEN 'upcoming'
-    WHEN NOW() BETWEEN TIMESTAMP(e.event_date, e.start_time) AND TIMESTAMP(e.event_date, e.end_time) THEN 'ongoing'
+    WHEN NOW() >= TIMESTAMP(e.event_date, e.start_time) AND NOW() < TIMESTAMP(e.event_date, e.end_time) THEN 'ongoing'
     ELSE 'completed'
   END
 `;
@@ -673,10 +673,11 @@ router.delete('/events/:id', authenticate, authorize('admin'), validate(idParam,
 }));
 
 router.get('/events/:id/qr', authenticate, authorize('admin', 'organizer'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
-  const [[event]] = await pool.query('SELECT id, title, qr_code FROM events WHERE id = ?', [req.params.id]);
+  const [[event]] = await pool.query('SELECT id, title, qr_code, event_date, end_time FROM events WHERE id = ?', [req.params.id]);
   if (!event) return res.status(404).json({ message: 'Event not found.' });
-  const dataUrl = await QRCode.toDataURL(JSON.stringify({ event_id: event.id, qr_code: event.qr_code }));
-  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, image: dataUrl });
+  const expiresAt = new Date(`${String(event.event_date).slice(0, 10)}T${String(event.end_time || '00:00').slice(0, 5)}:00`).toISOString();
+  const dataUrl = await QRCode.toDataURL(JSON.stringify({ event_id: event.id, qr_code: event.qr_code, expires_at: expiresAt }));
+  res.json({ event_id: event.id, title: event.title, qr_code: event.qr_code, attendance_code: `${event.id}-${event.qr_code.slice(0, 8).toUpperCase()}`, expires_at: expiresAt, image: dataUrl });
 }));
 
 router.post('/events/:id/like', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -732,10 +733,10 @@ router.post('/attendance/scan', authenticate, authorize('student'), validate(att
   const [[event]] = await pool.query(
     `SELECT * FROM events
      WHERE id = ? AND qr_code = ? AND status <> 'cancelled'
-       AND NOW() BETWEEN TIMESTAMP(event_date, start_time) AND TIMESTAMP(event_date, end_time)`,
+       AND NOW() >= TIMESTAMP(event_date, start_time) AND NOW() < TIMESTAMP(event_date, end_time)`,
     [eventId, qrCode],
   );
-  if (!event) return res.status(400).json({ message: 'QR code is invalid or attendance time is closed.' });
+  if (!event) return res.status(400).json({ message: 'QR code is invalid, expired, or attendance time is closed.' });
 
   const [[existing]] = await pool.query('SELECT id FROM attendance WHERE student_id = ? AND event_id = ?', [req.body.student_id, eventId]);
   if (existing) return res.status(409).json({ message: 'Attendance already recorded for this event.' });
