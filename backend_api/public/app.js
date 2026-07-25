@@ -7,7 +7,6 @@ const state = {
   editingUser: null,
   editingPost: null,
   editingOfficer: null,
-  menuOpen: false,
 };
 
 const app = document.querySelector('#app');
@@ -619,13 +618,12 @@ function renderStudentRegistration() {
 function renderShell() {
   const items = navByRole[state.user.role] || navByRole.student;
   app.innerHTML = `
-    <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''} ${state.menuOpen ? 'menu-open' : ''}">
+    <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
         <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
         <div class="topbar-actions">
           ${state.user.role === 'student' ? '<span class="points-chip" id="topPointsChip">0 pts</span>' : ''}
           <span class="profile-pill">${esc(state.user.name)} <small>${esc(state.user.role)}</small></span>
-          <button class="secondary menu-toggle" id="menuToggle" type="button">${state.menuOpen ? 'Hide Menu' : 'Menu'}</button>
           <button class="secondary" id="logoutBtn">Logout</button>
         </div>
       </header>
@@ -646,17 +644,12 @@ function renderShell() {
     </section>
   `;
   document.querySelector('#logoutBtn').addEventListener('click', logout);
-  document.querySelector('#menuToggle').addEventListener('click', () => {
-    state.menuOpen = !state.menuOpen;
-    renderShell();
-  });
   const pageSearchInput = document.querySelector('#pageSearchInput');
   pageSearchInput.addEventListener('change', () => {
     const query = pageSearchInput.value.toLowerCase().trim();
     const match = items.find(([key, label]) => label.toLowerCase() === query || label.toLowerCase().includes(query));
     if (!match) return;
     state.active = match[0];
-    state.menuOpen = false;
     resetEditing();
     renderShell();
   });
@@ -666,14 +659,12 @@ function renderShell() {
     const match = items.find(([key, label]) => label.toLowerCase().includes(query));
     if (!match) return;
     state.active = match[0];
-    state.menuOpen = false;
     resetEditing();
     renderShell();
   });
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
       state.active = button.dataset.view;
-      state.menuOpen = false;
       resetEditing();
       renderShell();
     });

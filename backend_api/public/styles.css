@@ -2427,3 +2427,87 @@ textarea {
     gap: 12px;
   }
 }
+
+/* Always-visible navigation: menu toggle removed */
+.menu-toggle {
+  display: none !important;
+}
+
+@media (max-width: 860px) {
+  .app-shell .sidebar,
+  .app-shell:not(.menu-open) .sidebar {
+    display: flex !important;
+  }
+
+  .app-shell .sidebar {
+    background: rgba(255,255,255,.94);
+    border: 1px solid rgba(203, 213, 225, .9);
+    border-radius: 22px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, .12);
+    gap: 8px;
+    left: 12px;
+    max-width: calc(100vw - 24px);
+    min-height: 0;
+    overflow-x: auto;
+    padding: 8px;
+    position: sticky;
+    right: 12px;
+    top: 112px;
+    width: calc(100vw - 24px);
+    z-index: 6;
+  }
+
+  .app-shell .nav-btn {
+    border-radius: 17px;
+    flex: 0 0 auto;
+    font-size: 12px;
+    min-width: 82px;
+    padding: 8px 10px;
+    white-space: nowrap;
+    width: auto;
+  }
+
+  .student-app-shell .sidebar,
+  .student-app-shell:not(.menu-open) .sidebar {
+    bottom: 12px;
+    left: 50%;
+    max-height: 76px;
+    max-width: calc(100vw - 20px);
+    position: fixed;
+    right: auto;
+    top: auto;
+    transform: translateX(-50%);
+    width: auto;
+  }
+
+  .topbar-actions {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .role-admin .topbar-actions,
+  .role-organizer .topbar-actions,
+  .role-printing_staff .topbar-actions {
+    display: flex;
+  }
+
+  .content {
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar-actions {
+    grid-template-columns: 52px minmax(0, 1fr) 68px;
+  }
+
+  .role-admin .topbar-actions,
+  .role-organizer .topbar-actions,
+  .role-printing_staff .topbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 68px;
+  }
+
+  .app-shell .nav-btn {
+    min-width: 76px;
+  }
+}
