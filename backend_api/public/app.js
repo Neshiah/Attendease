@@ -1,6 +1,7 @@
 const state = {
   token: localStorage.getItem('token'),
   user: JSON.parse(localStorage.getItem('user') || 'null'),
+  theme: localStorage.getItem('theme') || 'light',
   active: 'dashboard',
   editingStudent: null,
   editingEvent: null,
@@ -10,6 +11,7 @@ const state = {
 };
 
 const app = document.querySelector('#app');
+document.documentElement.dataset.theme = state.theme;
 const isAdminLoginPage = window.location.pathname.startsWith('/admin-login');
 const isStudentLoginPage = window.location.pathname.startsWith('/student-login') || window.location.pathname === '/';
 const isRegisterPage = window.location.pathname.startsWith('/student-register');
@@ -119,6 +121,7 @@ function saveSession(data) {
 function logout() {
   const wasStudent = state.user?.role === 'student';
   localStorage.clear();
+  localStorage.setItem('theme', state.theme);
   state.token = null;
   state.user = null;
   window.location.href = wasStudent ? '/' : '/admin-login';
@@ -142,9 +145,35 @@ async function api(path, options = {}) {
 function toast(message) {
   const node = document.createElement('div');
   node.className = 'toast';
+  node.setAttribute('role', 'status');
+  node.setAttribute('aria-live', 'polite');
   node.textContent = message;
   document.body.appendChild(node);
   setTimeout(() => node.remove(), 3200);
+}
+
+function confirmAction(message, title = 'Confirm action') {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+      <form method="dialog" class="dialog-card">
+        <span class="dialog-kicker">Please confirm</span>
+        <h2>${esc(title)}</h2>
+        <p>${esc(message)}</p>
+        <div class="actions">
+          <button type="submit" class="secondary" value="cancel">Cancel</button>
+          <button type="submit" class="danger" value="confirm">Continue</button>
+        </div>
+      </form>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('close', () => {
+      resolve(dialog.returnValue === 'confirm');
+      dialog.remove();
+    }, { once: true });
+    dialog.showModal();
+  });
 }
 
 function esc(value) {
@@ -159,6 +188,30 @@ function esc(value) {
 
 function badge(value) {
   return `<span class="badge ${esc(value)}">${esc(value)}</span>`;
+}
+
+function personInitials(name = 'User') {
+  return String(name)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase() || 'U';
+}
+
+function loadingSkeleton() {
+  return `
+    <div class="skeleton-page" role="status" aria-label="Loading page">
+      <div class="skeleton skeleton-heading"></div>
+      <div class="skeleton-grid">
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+      <div class="skeleton skeleton-panel"></div>
+    </div>
+  `;
 }
 
 function metricCard(label, value, note, tone = '') {
@@ -204,15 +257,60 @@ function searchBox(placeholder = 'Search records') {
 function bindSearch() {
   const input = document.querySelector('#searchInput');
   const sort = document.querySelector('#sortSelect');
-  const applySearch = () => {
-    const query = input.value.toLowerCase().trim();
-    document.querySelectorAll('[data-search-row]').forEach((row) => {
-      row.classList.toggle('hidden', query && !row.dataset.searchRow.includes(query));
+  const paginatedList = document.querySelector('[data-paginate="true"]');
+  const pageSize = Number(paginatedList?.dataset.pageSize || 6);
+  let currentPage = 1;
+
+  const allRows = () => Array.from(
+    paginatedList?.querySelectorAll('[data-search-row]')
+      || document.querySelectorAll('[data-search-row]'),
+  );
+
+  const renderPagination = () => {
+    const rows = allRows();
+    const query = input?.value.toLowerCase().trim() || '';
+    const matching = rows.filter((row) => !query || row.dataset.searchRow.includes(query));
+    const pages = Math.max(1, Math.ceil(matching.length / pageSize));
+    currentPage = Math.min(currentPage, pages);
+
+    rows.forEach((row) => row.classList.add('hidden'));
+    if (paginatedList) {
+      matching.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+        .forEach((row) => row.classList.remove('hidden'));
+    } else {
+      matching.forEach((row) => row.classList.remove('hidden'));
+    }
+
+    if (!paginatedList) return;
+    let pager = paginatedList.parentElement.querySelector('.pagination');
+    if (!pager) {
+      pager = document.createElement('nav');
+      pager.className = 'pagination';
+      pager.setAttribute('aria-label', 'List pagination');
+      paginatedList.insertAdjacentElement('afterend', pager);
+    }
+    pager.innerHTML = `
+      <button class="secondary" type="button" data-page="prev" aria-label="Previous page" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
+      <span>Page <strong>${currentPage}</strong> of ${pages} <small>${matching.length} records</small></span>
+      <button class="secondary" type="button" data-page="next" aria-label="Next page" ${currentPage === pages ? 'disabled' : ''}>Next</button>
+    `;
+    pager.querySelector('[data-page="prev"]')?.addEventListener('click', () => {
+      currentPage -= 1;
+      renderPagination();
     });
+    pager.querySelector('[data-page="next"]')?.addEventListener('click', () => {
+      currentPage += 1;
+      renderPagination();
+    });
+  };
+
+  const applySearch = () => {
+    currentPage = 1;
+    renderPagination();
   };
   const applySort = () => {
     if (!sort?.value) return;
-    const rows = Array.from(document.querySelectorAll('[data-search-row]'));
+    const rows = allRows();
     if (!rows.length) return;
     const parent = rows[0].parentElement;
     const value = sort.value;
@@ -227,9 +325,12 @@ function bindSearch() {
       return value.endsWith('asc') ? textA.localeCompare(textB) : textB.localeCompare(textA);
     });
     rows.forEach((row) => parent.appendChild(row));
+    currentPage = 1;
+    renderPagination();
   };
   input?.addEventListener('input', applySearch);
   sort?.addEventListener('change', applySort);
+  renderPagination();
 }
 
 function sortableText(row) {
@@ -365,6 +466,9 @@ async function renderLogin() {
 
   app.innerHTML = `
     <section class="auth-shell auth-${mode}">
+      <button class="auth-theme-toggle secondary" id="authThemeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+        <span class="theme-icon" aria-hidden="true"></span>
+      </button>
       <div class="brand">
         ${brandLogo('AR')}
         <span class="auth-eyebrow">${esc(cachedBranding?.school_name || 'Campus OSA')}</span>
@@ -391,6 +495,7 @@ async function renderLogin() {
       </form>
     </section>
   `;
+  document.querySelector('#authThemeToggle').addEventListener('click', toggleTheme);
   enhancePasswordToggles();
   document.querySelector('#loginForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -425,9 +530,18 @@ async function renderLogin() {
   });
 }
 
+function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('theme', state.theme);
+  document.documentElement.dataset.theme = state.theme;
+}
+
 function renderForgotPassword() {
   app.innerHTML = `
     <section class="auth-shell">
+      <button class="auth-theme-toggle secondary" id="authThemeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+        <span class="theme-icon" aria-hidden="true"></span>
+      </button>
       <div class="brand">
         <div class="brand-mark">PW</div>
         <h1>Forgot Password</h1>
@@ -450,6 +564,7 @@ function renderForgotPassword() {
       </form>
     </section>
   `;
+  document.querySelector('#authThemeToggle').addEventListener('click', toggleTheme);
   enhancePasswordToggles();
   document.querySelector('#sendResetCode').addEventListener('click', async () => {
     try {
@@ -490,6 +605,9 @@ function renderForgotPassword() {
 function renderStudentRegistration() {
   app.innerHTML = `
     <section class="auth-shell register-shell">
+      <button class="auth-theme-toggle secondary" id="authThemeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+        <span class="theme-icon" aria-hidden="true"></span>
+      </button>
       <div class="brand">
         <div class="brand-mark">QR</div>
         <h1>Student Self Registration</h1>
@@ -543,6 +661,7 @@ function renderStudentRegistration() {
       </form>
     </section>
   `;
+  document.querySelector('#authThemeToggle').addEventListener('click', toggleTheme);
   enhancePasswordToggles();
   let stream = null;
   let livenessStartedAt = 0;
@@ -628,11 +747,29 @@ function renderShell() {
   app.innerHTML = `
     <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
-        <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
+        <div class="topbar-brand">
+          <button class="nav-toggle" id="navToggle" type="button" aria-label="Open navigation" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
+        </div>
         <div class="topbar-actions">
           ${state.user.role === 'student' ? '<span class="points-chip" id="topPointsChip">0 pts</span>' : ''}
-          <span class="profile-pill">${esc(state.user.name)} <small>${esc(state.user.role)}</small></span>
-          <button class="secondary" id="logoutBtn">Logout</button>
+          <button class="theme-toggle secondary" id="themeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+          <div class="profile-menu">
+            <button class="profile-pill" id="profileMenuButton" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span class="profile-avatar">${esc(personInitials(state.user.name))}</span>
+              <span class="profile-copy">${esc(state.user.name)} <small>${esc(state.user.role)}</small></span>
+              <span class="profile-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="profile-dropdown hidden" id="profileDropdown" role="menu">
+              <button type="button" data-profile-action="profile" role="menuitem">My Profile</button>
+              ${state.user.role === 'admin' ? '<button type="button" data-profile-action="settings" role="menuitem">System Settings</button>' : ''}
+              <button type="button" data-profile-action="logout" role="menuitem">Sign out</button>
+            </div>
+          </div>
         </div>
       </header>
       <section class="top-search">
@@ -644,14 +781,21 @@ function renderShell() {
         </datalist>
       </section>
       <div class="layout">
-        <nav class="sidebar" aria-label="Main navigation">
+        <nav class="sidebar" id="mainNavigation" aria-label="Main navigation">
           ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
         </nav>
-        <section class="content" id="content"></section>
+        <div class="main-stage">
+          <main class="content" id="content" tabindex="-1"></main>
+          <footer class="app-footer">
+            <span>${esc(cachedBranding?.app_name || 'Attendease')}</span>
+            <span>Attendance, rewards, and student services</span>
+          </footer>
+        </div>
       </div>
+      <button class="nav-scrim hidden" id="navScrim" type="button" aria-label="Close navigation"></button>
     </section>
   `;
-  document.querySelector('#logoutBtn').addEventListener('click', logout);
+  bindShellControls();
   const pageSearchInput = document.querySelector('#pageSearchInput');
   pageSearchInput.addEventListener('change', () => {
     const query = pageSearchInput.value.toLowerCase().trim();
@@ -681,6 +825,52 @@ function renderShell() {
   renderView();
 }
 
+function bindShellControls() {
+  const shell = document.querySelector('.app-shell');
+  const navToggle = document.querySelector('#navToggle');
+  const navScrim = document.querySelector('#navScrim');
+  const profileButton = document.querySelector('#profileMenuButton');
+  const profileDropdown = document.querySelector('#profileDropdown');
+
+  const closeNavigation = () => {
+    shell.classList.remove('nav-open');
+    navToggle.setAttribute('aria-expanded', 'false');
+    navScrim.classList.add('hidden');
+  };
+  navToggle.addEventListener('click', () => {
+    const open = shell.classList.toggle('nav-open');
+    navToggle.setAttribute('aria-expanded', String(open));
+    navScrim.classList.toggle('hidden', !open);
+  });
+  navScrim.addEventListener('click', closeNavigation);
+
+  document.querySelector('#themeToggle').addEventListener('click', toggleTheme);
+
+  profileButton.addEventListener('click', () => {
+    const closed = profileDropdown.classList.toggle('hidden');
+    profileButton.setAttribute('aria-expanded', String(!closed));
+  });
+  document.querySelectorAll('[data-profile-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.profileAction;
+      if (action === 'logout') return logout();
+      state.active = action;
+      renderShell();
+    });
+  });
+  document.onkeydown = (event) => {
+    if (event.key !== 'Escape') return;
+    closeNavigation();
+    profileDropdown.classList.add('hidden');
+    profileButton.setAttribute('aria-expanded', 'false');
+  };
+  document.onclick = (event) => {
+    if (event.target.closest('.profile-menu')) return;
+    profileDropdown.classList.add('hidden');
+    profileButton.setAttribute('aria-expanded', 'false');
+  };
+}
+
 async function hydrateStudentTopPoints() {
   if (state.user.role !== 'student' || !state.user.student_id) return;
   try {
@@ -698,30 +888,31 @@ function setContent(html) {
 }
 
 async function renderView() {
+  setContent(loadingSkeleton());
   try {
     const role = state.user.role;
-    if (state.active === 'dashboard') return renderDashboard();
-    if (state.active === 'hub') return renderInformationHub();
-    if (state.active === 'officers') return renderOfficers();
-    if (state.active === 'profile') return renderProfile();
-    if (state.active === 'students') return renderStudents();
-    if (state.active === 'events') return renderStudentEvents();
-    if (state.active === 'eventsAdmin') return renderAdminEvents();
-    if (state.active === 'qr') return renderQr();
-    if (state.active === 'scan') return renderScan();
-    if (state.active === 'feedback') return renderFeedbackForm();
-    if (state.active === 'wallet') return renderWallet();
-    if (state.active === 'redeem') return renderRedeem();
-    if (state.active === 'history') return renderHistory();
-    if (state.active === 'notifications') return renderNotifications();
-    if (state.active === 'attendance') return renderAttendanceReport();
-    if (state.active === 'feedbackAdmin') return renderFeedbackReport();
-    if (state.active === 'points') return renderPoints();
-    if (state.active === 'printing') return renderPrinting();
-    if (state.active === 'reports') return renderReports();
-    if (state.active === 'reportsPrinting') return renderPrintingReport();
-    if (state.active === 'users') return renderUsers();
-    if (state.active === 'settings') return renderSettings();
+    if (state.active === 'dashboard') return await renderDashboard();
+    if (state.active === 'hub') return await renderInformationHub();
+    if (state.active === 'officers') return await renderOfficers();
+    if (state.active === 'profile') return await renderProfile();
+    if (state.active === 'students') return await renderStudents();
+    if (state.active === 'events') return await renderStudentEvents();
+    if (state.active === 'eventsAdmin') return await renderAdminEvents();
+    if (state.active === 'qr') return await renderQr();
+    if (state.active === 'scan') return await renderScan();
+    if (state.active === 'feedback') return await renderFeedbackForm();
+    if (state.active === 'wallet') return await renderWallet();
+    if (state.active === 'redeem') return await renderRedeem();
+    if (state.active === 'history') return await renderHistory();
+    if (state.active === 'notifications') return await renderNotifications();
+    if (state.active === 'attendance') return await renderAttendanceReport();
+    if (state.active === 'feedbackAdmin') return await renderFeedbackReport();
+    if (state.active === 'points') return await renderPoints();
+    if (state.active === 'printing') return await renderPrinting();
+    if (state.active === 'reports') return await renderReports();
+    if (state.active === 'reportsPrinting') return await renderPrintingReport();
+    if (state.active === 'users') return await renderUsers();
+    if (state.active === 'settings') return await renderSettings();
     setContent(`<div class="panel">No view found for ${esc(state.active)} / ${esc(role)}.</div>`);
   } catch (error) {
     setContent(`<div class="panel"><h2>Something went wrong</h2><p>${esc(error.message)}</p></div>`);
@@ -808,6 +999,20 @@ async function renderDashboard() {
       ${state.user.role === 'printing_staff' ? '<button data-jump="printing">Review Printing</button>' : ''}
       ${state.user.role === 'organizer' ? '<button data-jump="attendance">Attendance Records</button><button data-jump="feedbackAdmin" class="secondary">Feedback Results</button>' : ''}
     </div>
+    <section class="panel analytics-panel" aria-label="Operations overview">
+      <div class="feed-title">
+        <div>
+          <span class="page-kicker">Live overview</span>
+          <h3>Service activity</h3>
+        </div>
+        <span class="muted">Current report totals</span>
+      </div>
+      <div class="mini-chart">
+        <div><span style="--bar:${Math.min(100, 24 + attendance.length * 8)}%"></span><small>Attendance</small><strong>${attendance.length}</strong></div>
+        <div><span style="--bar:${Math.min(100, 24 + feedback.length * 8)}%"></span><small>Feedback</small><strong>${feedback.length}</strong></div>
+        <div><span style="--bar:${Math.min(100, 24 + printing.length * 8)}%"></span><small>Printing</small><strong>${printing.length}</strong></div>
+      </div>
+    </section>
     <div class="toolbar dashboard-search">
       ${searchBox('Search dashboard records')}
     </div>
@@ -902,7 +1107,7 @@ function hubPostCard(row) {
         <p>${esc(row.content)}</p>
         ${row.image_data ? `
           <figure class="hub-media">
-            <img src="${row.image_data}" alt="${esc(row.image_caption || row.title)}" />
+            <img src="${row.image_data}" alt="${esc(row.image_caption || row.title)}" loading="lazy" decoding="async" />
             ${row.image_caption ? `<figcaption>${esc(row.image_caption)}</figcaption>` : ''}
           </figure>
         ` : ''}
@@ -984,7 +1189,7 @@ function bindHubActions() {
   });
   document.querySelectorAll('[data-delete-post]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Delete this information post?')) return;
+      if (!await confirmAction('Delete this information post? This cannot be undone.', 'Delete information post')) return;
       try {
         await api(`/hub/posts/${button.dataset.deletePost}`, { method: 'DELETE' });
         toast('Information post deleted.');
@@ -1072,7 +1277,7 @@ function officerCard(row) {
   return `
     <article class="officer-card" data-search-row="${searchable(`${row.name} ${row.position} ${row.department} ${row.email} ${row.status}`)}">
       <div class="officer-media">
-        ${row.photo_data ? `<img class="officer-photo" src="${row.photo_data}" alt="${esc(row.name)}" />` : `<div class="avatar officer-avatar">${esc(row.name).slice(0, 2).toUpperCase()}</div>`}
+        ${row.photo_data ? `<img class="officer-photo" src="${row.photo_data}" alt="${esc(row.name)}" loading="lazy" decoding="async" />` : `<div class="avatar officer-avatar">${esc(row.name).slice(0, 2).toUpperCase()}</div>`}
       </div>
       <div class="officer-info">
         <div class="officer-heading">
@@ -1135,7 +1340,7 @@ function bindOfficerForm(rows) {
   });
   document.querySelectorAll('[data-delete-officer]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Deactivate this officer?')) return;
+      if (!await confirmAction('Deactivate this officer profile?', 'Deactivate officer')) return;
       try {
         await api(`/officers/${button.dataset.deleteOfficer}`, { method: 'DELETE' });
         toast('Officer deactivated.');
@@ -1179,7 +1384,7 @@ async function renderProfile() {
   setContent(`
     ${pageHeader('Profile', 'Account and role information.')}
     <div class="panel profile-card">
-      ${profile.face_image_data ? `<img class="profile-photo" src="${profile.face_image_data}" alt="Student face profile" />` : `<div class="avatar">${initials}</div>`}
+      ${profile.face_image_data ? `<img class="profile-photo" src="${profile.face_image_data}" alt="Student face profile" loading="lazy" decoding="async" />` : `<div class="avatar">${initials}</div>`}
       <div>
         <h2>${esc(profile.name)}</h2>
         <p><strong>Email:</strong> ${esc(profile.email)}</p>
@@ -1199,20 +1404,25 @@ async function renderStudents() {
     <div id="registrationQrPanel"></div>
     ${state.user.role === 'admin' ? studentFormHtml(state.editingStudent) : ''}
     <div class="toolbar"><h2>Students</h2>${searchBox('Search name, student ID, course, section')}</div>
-    <div class="card-list">
+    <div class="card-list directory-list" data-paginate="true" data-page-size="6">
       ${rows.map((row) => `
-        <article class="record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.course} ${row.section} ${row.email}`)}">
-          <div>
+        <article class="record directory-card student-record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.course} ${row.section} ${row.email}`)}">
+          <div class="directory-avatar" aria-hidden="true">${esc(personInitials(row.name))}</div>
+          <div class="directory-copy">
             <h3>${esc(row.name)}</h3>
-            <p class="muted">Student ID: ${esc(row.student_no)} | ${esc(row.course)} ${esc(row.year_level)}-${esc(row.section)}</p>
-            <p>Points: <strong>${row.total_points}</strong> | Email: ${esc(row.email)}</p>
+            <p class="directory-email">${esc(row.email)}</p>
+            <div class="directory-meta">
+              <span><small>Student ID</small>${esc(row.student_no)}</span>
+              <span><small>Program</small>${esc(row.course)} ${esc(row.year_level)}-${esc(row.section)}</span>
+              <span><small>Reward points</small><strong>${esc(row.total_points)}</strong></span>
+            </div>
           </div>
-          <div class="actions">
+          <div class="actions directory-actions">
             ${badge(row.status)}
             ${state.user.role === 'admin' ? `<button class="secondary" data-edit-student="${row.id}">Edit</button><button class="danger" data-delete-student="${row.id}">Deactivate</button>` : ''}
           </div>
         </article>
-      `).join('')}
+      `).join('') || emptyState('No students found.', 'Create the first student account using the form above.')}
     </div>
   `);
   bindStudentForm(rows);
@@ -1299,7 +1509,7 @@ function bindStudentForm(rows) {
   });
   document.querySelectorAll('[data-delete-student]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Deactivate this student account?')) return;
+      if (!await confirmAction('Deactivate this student account?', 'Deactivate student')) return;
       try {
         await api(`/students/${button.dataset.deleteStudent}`, { method: 'DELETE' });
         toast('Student deactivated.');
@@ -1460,7 +1670,7 @@ function bindEventForm(rows) {
   });
   document.querySelectorAll('[data-delete-event]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Cancel this event?')) return;
+      if (!await confirmAction('Cancel this event and stop new attendance scans?', 'Cancel event')) return;
       try {
         await api(`/events/${button.dataset.deleteEvent}`, { method: 'DELETE' });
         toast('Event cancelled.');
@@ -2022,24 +2232,30 @@ function bindReportExports(groups) {
 }
 
 async function renderUsers() {
-  const rows = await api('/users');
+  const allRows = await api('/users');
+  const rows = allRows.filter((row) => row.role !== 'student');
   setContent(`
     ${pageHeader('User Management', 'Create and review staff accounts.')}
     ${userFormHtml(state.editingUser)}
-    <div class="toolbar"><h2>Users</h2>${searchBox('Search staff users')}</div>
-    <div class="card-list">${rows.map((row) => `
-      <article class="record" data-search-row="${searchable(`${row.name} ${row.email} ${row.role} ${row.status}`)}">
-        <div>
+    <div class="toolbar"><h2>Staff accounts</h2>${searchBox('Search name, email, role, or status')}</div>
+    <div class="card-list directory-list" data-paginate="true" data-page-size="6">${rows.map((row) => `
+      <article class="record directory-card user-record" data-search-row="${searchable(`${row.name} ${row.email} ${row.role} ${row.status}`)}">
+        <div class="directory-avatar staff" aria-hidden="true">${esc(personInitials(row.name))}</div>
+        <div class="directory-copy">
           <h3>${esc(row.name)}</h3>
-          <p class="muted">${esc(row.email)} | ${esc(row.role)}</p>
+          <p class="directory-email">${esc(row.email)}</p>
+          <div class="directory-meta">
+            <span><small>Access role</small>${esc(row.role.replace(/_/g, ' '))}</span>
+            <span><small>Account</small>${row.id === state.user.id ? 'Current user' : 'Staff user'}</span>
+          </div>
         </div>
-        <div class="actions">
+        <div class="actions directory-actions">
           ${badge(row.status)}
-          ${row.role !== 'student' ? `<button class="secondary" data-edit-user="${row.id}">Edit</button>` : ''}
-          ${row.role !== 'student' && row.id !== state.user.id ? `<button class="danger" data-delete-user="${row.id}">Deactivate</button>` : ''}
+          <button class="secondary" data-edit-user="${row.id}">Edit</button>
+          ${row.id !== state.user.id ? `<button class="danger" data-delete-user="${row.id}">Deactivate</button>` : ''}
         </div>
       </article>
-    `).join('')}</div>
+    `).join('') || emptyState('No staff accounts found.', 'Create an admin, organizer, or printing staff account above.')}</div>
   `);
   bindUserForm(rows);
   bindSearch();
@@ -2113,7 +2329,7 @@ function bindUserForm(rows) {
   });
   document.querySelectorAll('[data-delete-user]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('Deactivate this staff user?')) return;
+      if (!await confirmAction('Deactivate this staff user account?', 'Deactivate staff user')) return;
       try {
         await api(`/users/${button.dataset.deleteUser}`, { method: 'DELETE' });
         toast('User deactivated.');
