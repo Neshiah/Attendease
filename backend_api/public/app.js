@@ -15,7 +15,10 @@ document.documentElement.dataset.theme = state.theme;
 const isAdminLoginPage = window.location.pathname.startsWith('/admin-login');
 const isStudentLoginPage = window.location.pathname.startsWith('/student-login') || window.location.pathname === '/';
 const isRegisterPage = window.location.pathname.startsWith('/student-register');
-const isForgotPasswordPage = window.location.pathname.startsWith('/forgot-password');
+const isAdminForgotPasswordPage = window.location.pathname.startsWith('/admin-forgot-password');
+const isStudentForgotPasswordPage = window.location.pathname.startsWith('/student-forgot-password')
+  || window.location.pathname.startsWith('/forgot-password');
+const isForgotPasswordPage = isAdminForgotPasswordPage || isStudentForgotPasswordPage;
 let cachedBranding = JSON.parse(localStorage.getItem('systemSettings') || 'null');
 
 const navByRole = {
@@ -458,8 +461,8 @@ async function renderLogin() {
   const loginLabel = mode === 'admin' ? 'Email Address' : 'Student ID or Email';
   const hint = mode === 'admin' ? 'Use your assigned admin, organizer, faculty, or printing staff account.' : 'Use your student ID or registered Gmail account.';
   const extraLinks = mode === 'student'
-    ? '<a href="/student-register">Student QR Registration</a> | <a href="/forgot-password">Forgot Password?</a>'
-    : '<a href="/forgot-password">Forgot Password?</a>';
+    ? '<a href="/student-register">Student QR Registration</a> | <a href="/student-forgot-password">Forgot Password?</a>'
+    : '<a href="/admin-forgot-password">Forgot Password?</a>';
   const featureList = mode === 'admin'
     ? ['Manage events and QR codes', 'Review reports and redemptions', 'Control system settings']
     : ['Scan event QR attendance', 'Answer feedback forms', 'Redeem points for printing'];
@@ -537,30 +540,41 @@ function toggleTheme() {
 }
 
 function renderForgotPassword() {
+  const mode = isAdminForgotPasswordPage ? 'admin' : 'student';
+  const accountType = mode === 'admin' ? 'staff' : 'student';
+  const title = mode === 'admin' ? 'Admin / Staff Password Recovery' : 'Student Password Recovery';
+  const description = mode === 'admin'
+    ? 'Recover only an active admin, organizer, faculty, or printing staff account.'
+    : 'Recover only an active student account using its registered email.';
+  const backUrl = mode === 'admin' ? '/admin-login' : '/';
+  const backLabel = mode === 'admin' ? 'Back to Admin / Staff Login' : 'Back to Student Login';
   app.innerHTML = `
-    <section class="auth-shell">
+    <section class="auth-shell auth-${mode} auth-reset">
       <button class="auth-theme-toggle secondary" id="authThemeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
         <span class="theme-icon" aria-hidden="true"></span>
       </button>
       <div class="brand">
-        <div class="brand-mark">PW</div>
-        <h1>Forgot Password</h1>
-        <p>Verify your Gmail with a reset code, then create a new password.</p>
+        ${brandLogo(mode === 'admin' ? 'AS' : 'ST')}
+        <span class="auth-eyebrow">${mode === 'admin' ? 'Staff account recovery' : 'Student account recovery'}</span>
+        <h1>${title}</h1>
+        <p>${description}</p>
       </div>
       <form id="forgotForm" class="panel">
+        <span class="auth-form-kicker">${mode === 'admin' ? 'Admin / Staff only' : 'Students only'}</span>
         <h2>Reset Password</h2>
-        <label>Email <input id="resetEmail" type="email" required /></label>
+        <p class="auth-subtitle">A six-digit code will be sent to your registered email.</p>
+        <label>Registered Email <input id="resetEmail" type="email" autocomplete="email" required /></label>
         <button type="button" id="sendResetCode">Send Code</button>
         <p class="hint reset-code-note" id="resetCodeHint">The reset code expires after 15 minutes.</p>
-        <label>Verification Code <input id="resetCode" required /></label>
+        <label>Verification Code <input id="resetCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required /></label>
         <label>New Password
           <span class="password-control">
-            <input id="newPassword" type="password" required minlength="6" />
-            <button type="button" class="mini-button" data-toggle-password="#newPassword">Show</button>
+            <input id="newPassword" type="password" autocomplete="new-password" required minlength="6" />
+            <button type="button" class="mini-button" data-toggle-password="#newPassword" aria-label="Show password">Show</button>
           </span>
         </label>
         <button type="submit">Update Password</button>
-        <p class="hint"><a href="/">Back to Student Login</a> | <a href="/admin-login">Admin / Staff Login</a></p>
+        <p class="hint"><a href="${backUrl}">${backLabel}</a></p>
       </form>
     </section>
   `;
@@ -570,7 +584,10 @@ function renderForgotPassword() {
     try {
       const data = await api('/password/forgot', {
         method: 'POST',
-        body: JSON.stringify({ email: document.querySelector('#resetEmail').value.trim().toLowerCase() }),
+        body: JSON.stringify({
+          email: document.querySelector('#resetEmail').value.trim().toLowerCase(),
+          account_type: accountType,
+        }),
       });
       if (data.dev_code) {
         document.querySelector('#resetCode').value = data.dev_code;
@@ -592,10 +609,11 @@ function renderForgotPassword() {
           email: document.querySelector('#resetEmail').value.trim().toLowerCase(),
           code: document.querySelector('#resetCode').value.trim(),
           password: document.querySelector('#newPassword').value,
+          account_type: accountType,
         }),
       });
       toast('Password updated. Please login.');
-      setTimeout(() => window.location.href = '/', 900);
+      setTimeout(() => window.location.href = backUrl, 900);
     } catch (error) {
       toast(error.message);
     }

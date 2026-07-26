@@ -87,6 +87,10 @@ const emailCodeSchema = z.object({
   email: z.string().email(),
 });
 
+const passwordForgotSchema = emailCodeSchema.extend({
+  account_type: z.enum(['student', 'staff']),
+});
+
 const registrationEmailSchema = z.object({
   email: gmailAddressSchema,
 });
@@ -109,6 +113,7 @@ const passwordResetSchema = z.object({
   email: z.string().email(),
   code: z.string().min(4).max(12),
   password: z.string().min(6),
+  account_type: z.enum(['student', 'staff']),
 });
 
 const hubPostSchema = z.object({
@@ -178,6 +183,7 @@ module.exports = {
   pointsAdjustSchema,
   redeemSchema,
   emailCodeSchema,
+  passwordForgotSchema,
   registrationEmailSchema,
   verifyEmailCodeSchema,
   selfRegisterSchema,

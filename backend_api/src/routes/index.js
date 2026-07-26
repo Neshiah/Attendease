@@ -23,7 +23,7 @@ const {
   feedbackSchema,
   pointsAdjustSchema,
   redeemSchema,
-  emailCodeSchema,
+  passwordForgotSchema,
   registrationEmailSchema,
   verifyEmailCodeSchema,
   selfRegisterSchema,
@@ -493,23 +493,35 @@ router.put('/settings', authenticate, authorize('admin'), validate(settingsSchem
   res.json({ message: 'System settings saved.', settings: await getSystemSettings() });
 }));
 
-router.post('/password/forgot', validate(emailCodeSchema), asyncHandler(async (req, res) => {
+router.post('/password/forgot', validate(passwordForgotSchema), asyncHandler(async (req, res) => {
   await ensureRegistrationTables();
   const email = normalizeEmail(req.body.email);
-  const [[user]] = await pool.query('SELECT id FROM users WHERE email = ? AND status = ?', [email, 'active']);
-  if (!user) return res.status(404).json({ message: 'No active account found for that email.' });
+  const [[user]] = await pool.query('SELECT id, role FROM users WHERE email = ? AND status = ?', [email, 'active']);
+  const expectedRole = req.body.account_type === 'student'
+    ? user?.role === 'student'
+    : user?.role && user.role !== 'student';
+  if (!user || !expectedRole) {
+    const accountLabel = req.body.account_type === 'student' ? 'student' : 'admin or staff';
+    return res.status(404).json({ message: `No active ${accountLabel} account found for that email.` });
+  }
   const code = await createEmailCode(email, 'password_reset');
   const sent = await sendEmailCode(email, code, 'password_reset');
-  res.json({ message: sent ? 'Password reset code sent to email.' : 'Password reset code generated for local testing.', sent, dev_code: sent ? undefined : code });
+  res.json({ message: sent ? 'Password reset code sent to your email.' : 'Password reset code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
 router.post('/password/reset', validate(passwordResetSchema), asyncHandler(async (req, res) => {
   await ensureRegistrationTables();
   const email = normalizeEmail(req.body.email);
+  const [[user]] = await pool.query('SELECT id, role FROM users WHERE email = ? AND status = ?', [email, 'active']);
+  const expectedRole = req.body.account_type === 'student'
+    ? user?.role === 'student'
+    : user?.role && user.role !== 'student';
+  if (!user || !expectedRole) {
+    const accountLabel = req.body.account_type === 'student' ? 'student' : 'admin or staff';
+    return res.status(404).json({ message: `No active ${accountLabel} account found for that email.` });
+  }
   const ok = await verifyEmailCode(email, req.body.code, 'password_reset', true);
   if (!ok) return res.status(400).json({ message: 'Invalid or expired reset code.' });
-  const [[user]] = await pool.query('SELECT id FROM users WHERE email = ? AND status = ?', [email, 'active']);
-  if (!user) return res.status(404).json({ message: 'No active account found for that email.' });
   const hashed = await bcrypt.hash(req.body.password, 10);
   await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashed, user.id]);
   res.json({ message: 'Password updated. You can now login.' });
