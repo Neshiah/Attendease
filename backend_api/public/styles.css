@@ -3161,7 +3161,7 @@ html[data-theme="dark"] .theme-icon::after {
   align-items: start;
   display: grid;
   grid-template-columns: 252px minmax(0, 1fr);
-  min-height: calc(100vh - 121px);
+  min-height: calc(100vh - 68px);
 }
 
 .sidebar {
@@ -4237,7 +4237,7 @@ html[data-theme="dark"] .ai-status-chip.error {
 
   .layout {
     display: block;
-    min-height: calc(100vh - 116px);
+    min-height: calc(100vh - 64px);
   }
 
   .sidebar,
@@ -4285,7 +4285,7 @@ html[data-theme="dark"] .ai-status-chip.error {
   }
 
   .content {
-    min-height: calc(100vh - 190px);
+    min-height: calc(100vh - 138px);
     padding: 20px 14px 32px;
   }
 
