@@ -1147,7 +1147,7 @@ async function renderDashboard() {
       </div>
     `);
     bindJumpButtons();
-    bindHubActions();
+    bindHubActions(posts);
     bindEventSocialActions();
     bindPrintingDownloads();
     bindSearch();
@@ -1220,12 +1220,36 @@ async function renderInformationHub() {
     <div class="hub-feed">${posts.map(hubPostCard).join('') || '<p class="muted">No information posts yet.</p>'}</div>
   `);
   if (isAdmin) bindHubPostForm(posts);
-  bindHubActions();
+  bindHubActions(posts);
   bindSearch();
+}
+
+function hubImages(row) {
+  if (Array.isArray(row?.images) && row.images.length) {
+    return row.images
+      .filter((image) => image?.data)
+      .map((image) => ({ data: image.data, caption: image.caption || '' }));
+  }
+  return row?.image_data
+    ? [{ data: row.image_data, caption: row.image_caption || '' }]
+    : [];
+}
+
+function hubImageEditorCard(image, index) {
+  return `
+    <article class="hub-image-editor-card">
+      <img src="${esc(image.data)}" alt="Selected post photo ${index + 1}" />
+      <label>Photo ${index + 1} caption
+        <input data-hub-caption="${index}" maxlength="240" value="${esc(image.caption || '')}" placeholder="Optional photo caption" />
+      </label>
+      <button type="button" class="secondary" data-remove-hub-photo="${index}">Remove</button>
+    </article>
+  `;
 }
 
 function hubPostFormHtml(row = null) {
   const editing = Boolean(row);
+  const images = hubImages(row);
   return `
     <form id="hubPostForm" class="panel">
       <h2>${editing ? 'Edit Information Post' : 'Create Information Post'}</h2>
@@ -1247,20 +1271,18 @@ function hubPostFormHtml(row = null) {
         </label>
       </div>
       <label>Details <textarea name="content" required>${esc(row?.content || '')}</textarea></label>
-      <section class="hub-image-uploader">
-        <input type="hidden" name="image_data" id="hubImageData" value="${esc(row?.image_data || '')}" />
-        <div class="hub-image-preview" id="hubImagePreview">
-          ${row?.image_data ? `<img src="${row.image_data}" alt="Information post image preview" />` : '<span>No image selected</span>'}
+      <section class="hub-image-uploader hub-multi-image-uploader">
+        <div class="hub-image-preview-grid" id="hubImagePreview">
+          ${images.length ? images.map(hubImageEditorCard).join('') : '<p class="muted">No photos selected.</p>'}
         </div>
-        <div>
-          <label>Post Picture
-            <input id="hubImageFile" type="file" accept="image/png,image/jpeg,image/webp" />
+        <div class="hub-upload-controls">
+          <label>Post Photos
+            <input id="hubImageFile" type="file" accept="image/png,image/jpeg,image/webp" multiple />
           </label>
-          <label>Caption <input name="image_caption" maxlength="240" value="${esc(row?.image_caption || '')}" placeholder="Short caption for the picture" /></label>
           <div class="actions">
-            <button type="button" class="secondary" id="removeHubImage">Remove Picture</button>
+            <button type="button" class="secondary" id="removeHubImages" ${images.length ? '' : 'disabled'}>Remove All</button>
           </div>
-          <p class="hint">Accepted: JPG, PNG, WEBP. Max 5MB.</p>
+          <p class="hint">Choose up to 4 JPG, PNG, or WEBP photos. Photos are optimized automatically for fast loading.</p>
         </div>
       </section>
       <div class="actions">
@@ -1272,8 +1294,10 @@ function hubPostFormHtml(row = null) {
 }
 
 function hubPostCard(row) {
+  const images = hubImages(row);
+  const captions = images.map((image) => image.caption).filter(Boolean).join(' ');
   return `
-    <article class="record hub-post" data-search-row="${searchable(`${row.title} ${row.category} ${row.content} ${row.image_caption || ''} ${row.author_name} ${row.status}`)}">
+    <article class="record hub-post" data-search-row="${searchable(`${row.title} ${row.category} ${row.content} ${captions} ${row.author_name} ${row.status}`)}">
       <div>
         <div class="actions">
           ${badge(row.category)}
@@ -1281,10 +1305,17 @@ function hubPostCard(row) {
         </div>
         <h3>${esc(row.title)}</h3>
         <p>${esc(row.content)}</p>
-        ${row.image_data ? `
+        ${images.length ? `
           <figure class="hub-media">
-            <img src="${row.image_data}" alt="${esc(row.image_caption || row.title)}" loading="lazy" decoding="async" />
-            ${row.image_caption ? `<figcaption>${esc(row.image_caption)}</figcaption>` : ''}
+            <div class="hub-media-grid hub-media-count-${Math.min(images.length, 4)}">
+              ${images.map((image, index) => `
+                <button class="hub-media-button" type="button" data-hub-photo="${row.id}" data-photo-index="${index}" aria-label="View photo ${index + 1} of ${images.length}">
+                  <img src="${esc(image.data)}" alt="${esc(image.caption || `${row.title}, photo ${index + 1}`)}" loading="lazy" decoding="async" />
+                  ${image.caption ? `<span>${esc(image.caption)}</span>` : ''}
+                </button>
+              `).join('')}
+            </div>
+            <figcaption>Click a photo to view the full gallery.</figcaption>
           </figure>
         ` : ''}
         <p class="muted">Posted by ${esc(row.author_name)} | ${esc(row.created_at)}</p>
@@ -1300,10 +1331,33 @@ function hubPostCard(row) {
 }
 
 function bindHubPostForm(posts) {
+  let postImages = hubImages(state.editingPost);
+  const preview = document.querySelector('#hubImagePreview');
+  const removeAllButton = document.querySelector('#removeHubImages');
+
+  const renderImageEditors = () => {
+    preview.innerHTML = postImages.length
+      ? postImages.map(hubImageEditorCard).join('')
+      : '<p class="muted">No photos selected.</p>';
+    removeAllButton.disabled = !postImages.length;
+    preview.querySelectorAll('[data-hub-caption]').forEach((input) => {
+      input.addEventListener('input', () => {
+        postImages[Number(input.dataset.hubCaption)].caption = input.value;
+      });
+    });
+    preview.querySelectorAll('[data-remove-hub-photo]').forEach((button) => {
+      button.addEventListener('click', () => {
+        postImages.splice(Number(button.dataset.removeHubPhoto), 1);
+        renderImageEditors();
+      });
+    });
+  };
+
   document.querySelector('#hubPostForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
       const data = formData(event.currentTarget);
+      data.images = postImages;
       if (state.editingPost) {
         await api(`/hub/posts/${state.editingPost.id}`, { method: 'PUT', body: JSON.stringify(data) });
         toast('Information post updated.');
@@ -1328,26 +1382,39 @@ function bindHubPostForm(posts) {
     });
   });
   document.querySelector('#hubImageFile')?.addEventListener('change', async (event) => {
-    const file = event.currentTarget.files[0];
-    if (!file) return;
+    const files = [...event.currentTarget.files];
+    if (!files.length) return;
     try {
-      if (file.size > 5 * 1024 * 1024) throw new Error('Information hub image must be 5MB or smaller.');
-      const dataUrl = await readFileAsDataUrl(file);
-      document.querySelector('#hubImageData').value = dataUrl;
-      document.querySelector('#hubImagePreview').innerHTML = `<img src="${dataUrl}" alt="Information post image preview" />`;
+      if (postImages.length + files.length > 4) throw new Error('A post can contain up to 4 photos.');
+      const additions = [];
+      for (const file of files) {
+        if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) throw new Error(`${file.name} is not a supported image.`);
+        const dataUrl = await readOptimizedImageDataUrl(file);
+        additions.push({ data: dataUrl, caption: '' });
+      }
+      postImages = [...postImages, ...additions];
+      renderImageEditors();
     } catch (error) {
       toast(error.message);
-      event.currentTarget.value = '';
     }
+    event.currentTarget.value = '';
   });
-  document.querySelector('#removeHubImage')?.addEventListener('click', () => {
-    document.querySelector('#hubImageData').value = '';
+  removeAllButton?.addEventListener('click', () => {
+    postImages = [];
     document.querySelector('#hubImageFile').value = '';
-    document.querySelector('#hubImagePreview').innerHTML = '<span>No image selected</span>';
+    renderImageEditors();
   });
+  renderImageEditors();
 }
 
-function bindHubActions() {
+function bindHubActions(posts) {
+  const postsById = new Map(posts.map((post) => [Number(post.id), post]));
+  document.querySelectorAll('[data-hub-photo]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const post = postsById.get(Number(button.dataset.hubPhoto));
+      openHubGallery(hubImages(post), Number(button.dataset.photoIndex), post?.title || 'Post photos');
+    });
+  });
   document.querySelectorAll('[data-like-post]').forEach((button) => {
     button.addEventListener('click', async () => {
       try {
@@ -1375,6 +1442,67 @@ function bindHubActions() {
       }
     });
   });
+}
+
+function openHubGallery(images, startIndex = 0, title = 'Post photos') {
+  if (!images.length) return;
+  let currentIndex = Math.max(0, Math.min(startIndex, images.length - 1));
+  const previousOverflow = document.body.style.overflow;
+  const overlay = document.createElement('div');
+  overlay.className = 'media-lightbox';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', title);
+  overlay.innerHTML = `
+    <button class="media-lightbox-close" type="button" aria-label="Close photo viewer">&times;</button>
+    <button class="media-lightbox-nav previous" type="button" aria-label="Previous photo">&#8249;</button>
+    <figure>
+      <img alt="" />
+      <figcaption></figcaption>
+      <span class="media-lightbox-count"></span>
+    </figure>
+    <button class="media-lightbox-nav next" type="button" aria-label="Next photo">&#8250;</button>
+  `;
+  const image = overlay.querySelector('img');
+  const caption = overlay.querySelector('figcaption');
+  const counter = overlay.querySelector('.media-lightbox-count');
+  const previous = overlay.querySelector('.previous');
+  const next = overlay.querySelector('.next');
+
+  const render = () => {
+    const selected = images[currentIndex];
+    image.src = selected.data;
+    image.alt = selected.caption || `${title}, photo ${currentIndex + 1}`;
+    caption.textContent = selected.caption || title;
+    counter.textContent = `${currentIndex + 1} / ${images.length}`;
+    previous.hidden = images.length < 2;
+    next.hidden = images.length < 2;
+  };
+  const close = () => {
+    document.removeEventListener('keydown', onKeydown);
+    document.body.style.overflow = previousOverflow;
+    overlay.remove();
+  };
+  const move = (direction) => {
+    currentIndex = (currentIndex + direction + images.length) % images.length;
+    render();
+  };
+  const onKeydown = (event) => {
+    if (event.key === 'Escape') close();
+    if (event.key === 'ArrowLeft') move(-1);
+    if (event.key === 'ArrowRight') move(1);
+  };
+  overlay.querySelector('.media-lightbox-close').addEventListener('click', close);
+  previous.addEventListener('click', () => move(-1));
+  next.addEventListener('click', () => move(1));
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  document.addEventListener('keydown', onKeydown);
+  document.body.style.overflow = 'hidden';
+  document.body.appendChild(overlay);
+  render();
+  overlay.querySelector('.media-lightbox-close').focus();
 }
 
 async function togglePostComments(postId) {
@@ -2342,30 +2470,61 @@ function renderRedeem() {
       <h2>Redeem Printing</h2>
       <p class="hint">Conversion: 10 points = 1 printed page.</p>
       <label>Pages Requested <input name="pages_requested" type="number" min="1" value="1" required /></label>
-      <label>File to Print
-        <input name="print_file" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.jpg,.jpeg,.png" />
-        <span class="hint">Accepted: PDF, Word, PowerPoint, Excel, text, JPG, PNG. Max 20MB.</span>
+      <label>Files to Print
+        <input name="print_files" id="printFiles" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.jpg,.jpeg,.png" multiple />
+        <span class="hint">Choose up to 5 PDF, Word, PowerPoint, Excel, text, JPG, or PNG files. Maximum 3MB combined.</span>
       </label>
+      <div class="selected-print-files" id="selectedPrintFiles"><p class="muted">No files selected.</p></div>
       <label>Remarks <textarea name="remarks"></textarea></label>
       <button type="submit">Request Printing</button>
     </form>
   `);
+  const fileInput = document.querySelector('#printFiles');
+  const selectedFiles = document.querySelector('#selectedPrintFiles');
+  const renderSelectedFiles = () => {
+    const files = [...fileInput.files];
+    selectedFiles.innerHTML = files.length
+      ? files.map((file) => `
+          <div>
+            <span>${esc(file.name)}</span>
+            <strong>${formatFileSize(file.size)}</strong>
+          </div>
+        `).join('')
+      : '<p class="muted">No files selected.</p>';
+  };
+  fileInput.addEventListener('change', () => {
+    const files = [...fileInput.files];
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (files.length > 5 || totalSize > 3 * 1024 * 1024) {
+      fileInput.value = '';
+      renderSelectedFiles();
+      toast(files.length > 5 ? 'Choose no more than 5 files.' : 'Printing files must be 3MB or smaller in total.');
+      return;
+    }
+    renderSelectedFiles();
+  });
   document.querySelector('#redeemForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
       const data = formData(event.currentTarget);
-      const file = event.currentTarget.elements.print_file.files[0];
+      const files = [...event.currentTarget.elements.print_files.files];
       data.student_id = state.user.student_id;
       data.pages_requested = Number(data.pages_requested);
-      delete data.print_file;
-      if (file) {
-        data.file_name = file.name;
-        data.file_type = file.type || 'application/octet-stream';
-        data.file_size = file.size;
-        data.file_data = await readFileAsDataUrl(file);
+      delete data.print_files;
+      if (files.length > 5) throw new Error('Choose no more than 5 files.');
+      if (files.reduce((sum, file) => sum + file.size, 0) > 3 * 1024 * 1024) {
+        throw new Error('Printing files must be 3MB or smaller in total.');
       }
+      data.files = await Promise.all(files.map(async (file) => ({
+        file_name: file.name,
+        file_type: file.type || 'application/octet-stream',
+        file_size: file.size,
+        file_data: await readFileAsDataUrl(file),
+      })));
       await api('/printing/redeem', { method: 'POST', body: JSON.stringify(data) });
-      toast('Printing request submitted.');
+      toast(`Printing request submitted with ${files.length} file${files.length === 1 ? '' : 's'}.`);
+      event.currentTarget.reset();
+      renderSelectedFiles();
     } catch (error) {
       toast(error.message);
     }
@@ -2509,16 +2668,27 @@ async function renderPrinting() {
 
 function printingCard(row) {
   const status = row.status;
+  const files = printingFiles(row);
+  const fileNames = files.map((file) => file.file_name).join(' ');
   return `
-    <article class="record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.student_id} ${row.status} ${row.pages_requested}`)}">
+    <article class="record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.student_id} ${row.status} ${row.pages_requested} ${fileNames}`)}">
       <div>
         <h3>${esc(row.name || `Request #${row.id}`)} - ${row.pages_requested} pages</h3>
         <p class="muted">Student: ${esc(row.student_no || 'Student account')} | Points: ${row.points_required}</p>
-        ${row.file_name ? `<p class="muted">File: ${esc(row.file_name)} (${Math.ceil((row.file_size || 0) / 1024)} KB)</p>` : '<p class="muted">No print file attached.</p>'}
+        ${files.length ? `
+          <div class="print-file-list">
+            ${files.map((file) => `
+              <div>
+                <span>${esc(file.file_name)}</span>
+                <small>${formatFileSize(file.file_size || 0)}</small>
+                <button class="secondary" data-file-redemption="${row.id}" data-file-id="${file.id ?? ''}" data-file-name="${esc(file.file_name)}">Download</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : '<p class="muted">No print files attached.</p>'}
         ${badge(status)}
       </div>
       <div class="actions">
-        ${row.file_name ? `<button class="secondary" data-file-id="${row.id}" data-file-name="${esc(row.file_name)}">Download File</button>` : ''}
         ${state.user.role === 'admin' || state.user.role === 'printing_staff' ? `
           <button data-print-action="approve" data-id="${row.id}" ${status !== 'pending' ? 'disabled' : ''}>Approve</button>
           <button class="secondary" data-print-action="reject" data-id="${row.id}" ${status !== 'pending' ? 'disabled' : ''}>Reject</button>
@@ -2529,11 +2699,29 @@ function printingCard(row) {
   `;
 }
 
+function printingFiles(row) {
+  if (Array.isArray(row.files) && row.files.length) return row.files;
+  return row.file_name
+    ? [{ id: null, file_name: row.file_name, file_type: row.file_type, file_size: row.file_size }]
+    : [];
+}
+
+function formatFileSize(size) {
+  const bytes = Number(size || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function bindPrintingDownloads() {
-  document.querySelectorAll('[data-file-id]').forEach((button) => {
+  document.querySelectorAll('[data-file-redemption]').forEach((button) => {
     button.addEventListener('click', async () => {
       try {
-        await downloadPrintingFile(button.dataset.fileId, button.dataset.fileName || 'printing-file');
+        await downloadPrintingFile(
+          button.dataset.fileRedemption,
+          button.dataset.fileId,
+          button.dataset.fileName || 'printing-file',
+        );
       } catch (error) {
         toast(error.message);
       }
@@ -2850,8 +3038,65 @@ function readFileAsDataUrl(file) {
   });
 }
 
-async function downloadPrintingFile(id, fallbackName = 'printing-file') {
-  const response = await fetch(`/api/printing/redemptions/${id}/file`, {
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Unable to optimize the selected photo.'))),
+      type,
+      quality,
+    );
+  });
+}
+
+async function loadImageForCanvas(file) {
+  if (typeof createImageBitmap === 'function') return createImageBitmap(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      image.src = url;
+    });
+    return {
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      source: image,
+      close: () => URL.revokeObjectURL(url),
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function readOptimizedImageDataUrl(file, maxBytes = 500 * 1024, maxDimension = 1600) {
+  const bitmap = await loadImageForCanvas(file);
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext('2d', { alpha: false });
+  context.drawImage(bitmap.source || bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+
+  let quality = 0.86;
+  let blob = await canvasToBlob(canvas, 'image/webp', quality);
+  while (blob.size > maxBytes && quality > 0.42) {
+    quality -= 0.08;
+    blob = await canvasToBlob(canvas, 'image/webp', quality);
+  }
+  if (blob.size > maxBytes) {
+    throw new Error(`${file.name} is too detailed to optimize below 500KB. Choose a smaller photo.`);
+  }
+  return readFileAsDataUrl(blob);
+}
+
+async function downloadPrintingFile(redemptionId, fileId, fallbackName = 'printing-file') {
+  const path = fileId === null || fileId === undefined || fileId === ''
+    ? `/api/printing/redemptions/${redemptionId}/file`
+    : `/api/printing/redemptions/${redemptionId}/files/${fileId}`;
+  const response = await fetch(path, {
     headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
   });
   if (!response.ok) {

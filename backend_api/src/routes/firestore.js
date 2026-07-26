@@ -10,6 +10,7 @@ const { sendVerificationEmail } = require('../utils/emailService');
 const {
   validate,
   idParam,
+  printingFileParam,
   studentIdParam,
   eventIdParam,
   loginSchema,
@@ -256,26 +257,122 @@ async function sendEmailCode(email, code, purpose) {
   });
 }
 
-function safeFile(payload) {
-  if (!payload.file_data || !payload.file_name) return {};
-  const match = payload.file_data.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) {
-    const error = new Error('Uploaded file is invalid.');
+function printingFilePayloads(payload) {
+  if (Array.isArray(payload.files) && payload.files.length) return payload.files;
+  if (payload.file_data && payload.file_name) {
+    return [{
+      file_name: payload.file_name,
+      file_type: payload.file_type,
+      file_size: payload.file_size,
+      file_data: payload.file_data,
+    }];
+  }
+  return [];
+}
+
+function safeFiles(payload) {
+  const candidates = printingFilePayloads(payload);
+  if (candidates.length > 5) {
+    const error = new Error('Upload no more than 5 printing files.');
     error.status = 422;
     throw error;
   }
-  const size = Buffer.from(match[2], 'base64').length;
-  if (size > 20 * 1024 * 1024) {
-    const error = new Error('Uploaded file must be 20MB or smaller.');
+  const parsed = candidates.map((file, index) => {
+    const match = String(file.file_data || '').match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      const error = new Error(`Uploaded file "${file.file_name || 'file'}" is invalid.`);
+      error.status = 422;
+      throw error;
+    }
+    const size = Buffer.from(match[2], 'base64').length;
+    return {
+      id: index,
+      file_name: file.file_name,
+      file_type: file.file_type || match[1],
+      file_size: size,
+      base64: match[2],
+    };
+  });
+  if (parsed.reduce((sum, file) => sum + file.file_size, 0) > 3 * 1024 * 1024) {
+    const error = new Error('Printing files must be 3MB or smaller in total.');
     error.status = 422;
     throw error;
   }
-  return {
-    file_name: payload.file_name,
-    file_type: payload.file_type || match[1],
-    file_size: size,
-    file_data: payload.file_data,
-  };
+  return parsed;
+}
+
+async function storePrintingFileChunks(redemptionId, files) {
+  const chunkSize = 700_000;
+  for (const file of files) {
+    for (let offset = 0, chunkIndex = 0; offset < file.base64.length; offset += chunkSize, chunkIndex += 1) {
+      await createDoc('printing_file_chunks', {
+        redemption_id: Number(redemptionId),
+        file_id: file.id,
+        chunk_index: chunkIndex,
+        data: file.base64.slice(offset, offset + chunkSize),
+      });
+    }
+  }
+}
+
+async function getPrintingFileData(redemptionId, fileId) {
+  const chunks = await listDocs('printing_file_chunks', (row) => (
+    Number(row.redemption_id) === Number(redemptionId) && Number(row.file_id) === Number(fileId)
+  ));
+  return chunks
+    .sort((a, b) => Number(a.chunk_index) - Number(b.chunk_index))
+    .map((chunk) => chunk.data)
+    .join('');
+}
+
+function printingFilesForRow(row) {
+  if (Array.isArray(row.files) && row.files.length) return row.files;
+  return row.file_name
+    ? [{
+      id: null,
+      file_name: row.file_name,
+      file_type: row.file_type,
+      file_size: row.file_size,
+    }]
+    : [];
+}
+
+function attachmentFileName(name) {
+  return String(name || 'printing-file').replace(/[\r\n"]/g, '_');
+}
+
+function hubImagesFromPayload(payload) {
+  if (Array.isArray(payload.images) && payload.images.length) {
+    return payload.images.map((image) => ({ data: image.data, caption: image.caption || '' }));
+  }
+  return payload.image_data
+    ? [{ data: payload.image_data, caption: payload.image_caption || '' }]
+    : [];
+}
+
+async function replaceHubPostImages(postId, images) {
+  const existing = await listDocs('information_post_images', (row) => Number(row.post_id) === Number(postId));
+  await Promise.all(existing.map((row) => db.collection('information_post_images').doc(String(row.id)).delete()));
+  for (let index = 0; index < images.length; index += 1) {
+    await createDoc('information_post_images', {
+      post_id: Number(postId),
+      image_index: index,
+      data: images[index].data,
+      caption: images[index].caption || '',
+    });
+  }
+}
+
+async function getHubPostImages(post) {
+  const images = await listDocs('information_post_images', (row) => Number(row.post_id) === Number(post.id));
+  if (images.length) {
+    return images
+      .sort((a, b) => Number(a.image_index) - Number(b.image_index))
+      .map((image) => ({ data: image.data, caption: image.caption || '' }));
+  }
+  return post.image_data
+    ? [{ data: post.image_data, caption: post.image_caption || '' }]
+    : [];
 }
 
 router.get('/registration/qr', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
@@ -681,16 +778,23 @@ router.post('/printing/redeem', authenticate, authorize('student'), validate(red
   const student = await getStudent(req.body.student_id);
   const pointsRequired = req.body.pages_requested * Number(settings.points_per_printed_page || 10);
   if (pointsRequired > Number(student.total_points || 0)) return res.status(400).json({ message: 'Insufficient points for this redemption.' });
+  const files = safeFiles(req.body);
   const id = await createDoc('printing_redemptions', {
     student_id: req.body.student_id,
     pages_requested: req.body.pages_requested,
     points_required: pointsRequired,
     status: 'pending',
     remarks: req.body.remarks || '',
-    ...safeFile(req.body),
+    files: files.map(({ id: fileId, file_name, file_type, file_size }) => ({
+      id: fileId,
+      file_name,
+      file_type,
+      file_size,
+    })),
     requested_at: now(),
   });
-  res.status(201).json({ message: 'Printing redemption request submitted.', id });
+  await storePrintingFileChunks(id, files);
+  res.status(201).json({ message: 'Printing redemption request submitted.', id, file_count: files.length });
 }));
 
 router.get('/printing/redemptions', authenticate, authorize('admin', 'printing_staff', 'student'), asyncHandler(async (req, res) => {
@@ -698,7 +802,13 @@ router.get('/printing/redemptions', authenticate, authorize('admin', 'printing_s
     req.user.role !== 'student' || Number(row.student_id) === Number(req.user.student_id)
   ))).map(async (row) => {
     const student = await studentWithUser(await getStudent(row.student_id));
-    return { ...row, name: student?.name, student_no: student?.student_no, file_data: undefined };
+    return {
+      ...row,
+      files: printingFilesForRow(row),
+      name: student?.name,
+      student_no: student?.student_no,
+      file_data: undefined,
+    };
   }));
   res.json(rows.sort((a, b) => String(b.requested_at).localeCompare(String(a.requested_at))));
 }));
@@ -707,17 +817,36 @@ router.get('/printing/redemptions/:id', authenticate, validate(idParam, 'params'
   const row = await getDoc('printing_redemptions', req.params.id);
   if (!row) return res.status(404).json({ message: 'Redemption request not found.' });
   if (req.user.role === 'student' && Number(row.student_id) !== Number(req.user.student_id)) return res.status(403).json({ message: 'You can only view your own printing request.' });
-  res.json({ ...row, file_data: undefined });
+  res.json({ ...row, files: printingFilesForRow(row), file_data: undefined });
 }));
 
 router.get('/printing/redemptions/:id/file', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
   const row = await getDoc('printing_redemptions', req.params.id);
-  if (!row || !row.file_data) return res.status(404).json({ message: 'File not found.' });
+  if (!row) return res.status(404).json({ message: 'File not found.' });
   if (req.user.role === 'student' && Number(row.student_id) !== Number(req.user.student_id)) return res.status(403).json({ message: 'You can only download your own printing file.' });
-  const match = row.file_data.match(/^data:([^;]+);base64,(.+)$/);
-  res.setHeader('Content-Type', row.file_type || match?.[1] || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${row.file_name || 'printing-file'}"`);
-  res.send(Buffer.from(match?.[2] || '', 'base64'));
+  const firstFile = printingFilesForRow(row)[0];
+  if (!firstFile) return res.status(404).json({ message: 'File not found.' });
+  const legacyMatch = String(row.file_data || '').match(/^data:([^;]+);base64,(.+)$/);
+  const base64 = legacyMatch?.[2] || await getPrintingFileData(row.id, firstFile.id);
+  if (!base64) return res.status(404).json({ message: 'File not found.' });
+  res.setHeader('Content-Type', firstFile.file_type || legacyMatch?.[1] || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${attachmentFileName(firstFile.file_name)}"`);
+  res.send(Buffer.from(base64, 'base64'));
+}));
+
+router.get('/printing/redemptions/:id/files/:file_id', authenticate, validate(printingFileParam, 'params'), asyncHandler(async (req, res) => {
+  const row = await getDoc('printing_redemptions', req.params.id);
+  if (!row) return res.status(404).json({ message: 'Printing request not found.' });
+  if (req.user.role === 'student' && Number(row.student_id) !== Number(req.user.student_id)) {
+    return res.status(403).json({ message: 'You can only download your own printing file.' });
+  }
+  const file = printingFilesForRow(row).find((item) => Number(item.id) === Number(req.params.file_id));
+  if (!file) return res.status(404).json({ message: 'Printing file not found.' });
+  const base64 = await getPrintingFileData(row.id, file.id);
+  if (!base64) return res.status(404).json({ message: 'Printing file not found.' });
+  res.setHeader('Content-Type', file.file_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${attachmentFileName(file.file_name)}"`);
+  res.send(Buffer.from(base64, 'base64'));
 }));
 
 router.put('/printing/redemptions/:id/approve', authenticate, authorize('printing_staff', 'admin'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -747,6 +876,7 @@ router.get('/hub/posts', authenticate, asyncHandler(async (req, res) => {
     const user = await getUser(row.created_by);
     return {
       ...row,
+      images: await getHubPostImages(row),
       author_name: user?.name || 'Admin',
       like_count: (await listDocs('information_post_likes', (like) => Number(like.post_id) === Number(row.id))).length,
       comment_count: (await listDocs('information_post_comments', (comment) => Number(comment.post_id) === Number(row.id))).length,
@@ -757,16 +887,35 @@ router.get('/hub/posts', authenticate, asyncHandler(async (req, res) => {
 }));
 
 router.post('/hub/posts', authenticate, authorize('admin'), validate(hubPostSchema), asyncHandler(async (req, res) => {
-  const id = await createDoc('information_posts', { ...req.body, created_by: req.user.id, created_at: now() });
+  const images = hubImagesFromPayload(req.body);
+  const id = await createDoc('information_posts', {
+    title: req.body.title,
+    category: req.body.category,
+    content: req.body.content,
+    status: req.body.status,
+    created_by: req.user.id,
+    created_at: now(),
+  });
+  await replaceHubPostImages(id, images);
   res.status(201).json({ message: 'Information post created.', id });
 }));
 
 router.put('/hub/posts/:id', authenticate, authorize('admin'), validate(idParam, 'params'), validate(hubPostSchema), asyncHandler(async (req, res) => {
-  await updateDoc('information_posts', req.params.id, req.body);
+  const images = hubImagesFromPayload(req.body);
+  await updateDoc('information_posts', req.params.id, {
+    title: req.body.title,
+    category: req.body.category,
+    content: req.body.content,
+    status: req.body.status,
+    image_data: null,
+    image_caption: null,
+  });
+  await replaceHubPostImages(req.params.id, images);
   res.json({ message: 'Information post updated.' });
 }));
 
 router.delete('/hub/posts/:id', authenticate, authorize('admin'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
+  await replaceHubPostImages(req.params.id, []);
   await db.collection('information_posts').doc(String(req.params.id)).delete();
   res.json({ message: 'Information post deleted.' });
 }));

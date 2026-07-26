@@ -12,6 +12,7 @@ const { sendVerificationEmail } = require('../utils/emailService');
 const {
   validate,
   idParam,
+  printingFileParam,
   studentIdParam,
   eventIdParam,
   loginSchema,
@@ -84,6 +85,21 @@ async function ensurePrintingFileColumns() {
   await ensureColumn('printing_redemptions', 'file_type', 'VARCHAR(120) NULL', 'file_name');
   await ensureColumn('printing_redemptions', 'file_size', 'INT NULL', 'file_type');
   await ensureColumn('printing_redemptions', 'file_path', 'VARCHAR(500) NULL', 'file_size');
+  await ensureTable(
+    'printing_redemption_files',
+    `CREATE TABLE printing_redemption_files (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      redemption_id INT NOT NULL,
+      file_name VARCHAR(255) NOT NULL,
+      file_type VARCHAR(120) NULL,
+      file_size INT NOT NULL,
+      file_path VARCHAR(500) NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_printing_files_redemption (redemption_id),
+      CONSTRAINT fk_printing_files_redemption
+        FOREIGN KEY (redemption_id) REFERENCES printing_redemptions(id) ON DELETE CASCADE
+    )`,
+  );
 }
 
 const defaultSettings = {
@@ -172,6 +188,7 @@ async function ensureCommunityTables() {
       content TEXT NOT NULL,
       image_data LONGTEXT NULL,
       image_caption VARCHAR(240) NULL,
+      images_json LONGTEXT NULL,
       status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'published',
       created_by INT NOT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -181,6 +198,7 @@ async function ensureCommunityTables() {
   );
   await ensureColumn('information_posts', 'image_data', 'LONGTEXT NULL', 'content');
   await ensureColumn('information_posts', 'image_caption', 'VARCHAR(240) NULL', 'image_data');
+  await ensureColumn('information_posts', 'images_json', 'LONGTEXT NULL', 'image_caption');
   await ensureTable(
     'information_post_likes',
     `CREATE TABLE information_post_likes (
@@ -255,31 +273,105 @@ function safeFileName(name) {
   return String(name || 'print-file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
 }
 
-function savePrintingFile(payload) {
-  if (!payload.file_data || !payload.file_name) return null;
-  const match = payload.file_data.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) {
-    const error = new Error('Uploaded file is invalid.');
-    error.status = 422;
-    throw error;
+function printingFilePayloads(payload) {
+  if (Array.isArray(payload.files) && payload.files.length) return payload.files;
+  if (payload.file_data && payload.file_name) {
+    return [{
+      file_name: payload.file_name,
+      file_type: payload.file_type,
+      file_size: payload.file_size,
+      file_data: payload.file_data,
+    }];
   }
+  return [];
+}
 
-  fs.mkdirSync(uploadDir, { recursive: true });
-  const fileName = `${Date.now()}-${safeFileName(payload.file_name)}`;
-  const filePath = path.join(uploadDir, fileName);
-  const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 20 * 1024 * 1024) {
-    const error = new Error('Uploaded file must be 20MB or smaller.');
+function savePrintingFiles(payload) {
+  const candidates = printingFilePayloads(payload);
+  if (candidates.length > 5) {
+    const error = new Error('Upload no more than 5 printing files.');
     error.status = 422;
     throw error;
   }
-  fs.writeFileSync(filePath, buffer);
-  return {
-    file_name: payload.file_name,
-    file_type: payload.file_type || match[1],
-    file_size: buffer.length,
-    file_path: filePath,
-  };
+  const parsed = candidates.map((file) => {
+    const match = String(file.file_data || '').match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      const error = new Error(`Uploaded file "${file.file_name || 'file'}" is invalid.`);
+      error.status = 422;
+      throw error;
+    }
+    const buffer = Buffer.from(match[2], 'base64');
+    return {
+      file_name: file.file_name,
+      file_type: file.file_type || match[1],
+      file_size: buffer.length,
+      buffer,
+    };
+  });
+  const totalSize = parsed.reduce((sum, file) => sum + file.file_size, 0);
+  if (totalSize > 3 * 1024 * 1024) {
+    const error = new Error('Printing files must be 3MB or smaller in total.');
+    error.status = 422;
+    throw error;
+  }
+  if (!parsed.length) return [];
+  fs.mkdirSync(uploadDir, { recursive: true });
+  return parsed.map((file, index) => {
+    const storedName = `${Date.now()}-${index}-${crypto.randomBytes(3).toString('hex')}-${safeFileName(file.file_name)}`;
+    const filePath = path.join(uploadDir, storedName);
+    fs.writeFileSync(filePath, file.buffer);
+    return { ...file, buffer: undefined, file_path: filePath };
+  });
+}
+
+function hubImagesFromPayload(payload) {
+  if (Array.isArray(payload.images) && payload.images.length) {
+    return payload.images.map((image) => ({ data: image.data, caption: image.caption || '' }));
+  }
+  return payload.image_data
+    ? [{ data: payload.image_data, caption: payload.image_caption || '' }]
+    : [];
+}
+
+function hubImagesFromRow(row) {
+  try {
+    const images = JSON.parse(row.images_json || '[]');
+    if (Array.isArray(images) && images.length) return images;
+  } catch (error) {
+    // Older posts remain readable through the legacy image columns.
+  }
+  return row.image_data
+    ? [{ data: row.image_data, caption: row.image_caption || '' }]
+    : [];
+}
+
+function withHubImages(row) {
+  return { ...row, images: hubImagesFromRow(row) };
+}
+
+async function attachPrintingFiles(rows) {
+  if (!rows.length) return rows;
+  const ids = rows.map((row) => Number(row.id));
+  const [files] = await pool.query(
+    `SELECT id, redemption_id, file_name, file_type, file_size
+     FROM printing_redemption_files
+     WHERE redemption_id IN (?)
+     ORDER BY id`,
+    [ids],
+  );
+  const grouped = new Map();
+  files.forEach((file) => {
+    const list = grouped.get(Number(file.redemption_id)) || [];
+    list.push(file);
+    grouped.set(Number(file.redemption_id), list);
+  });
+  return rows.map((row) => {
+    const attached = grouped.get(Number(row.id)) || [];
+    const legacy = !attached.length && row.file_name
+      ? [{ id: null, redemption_id: row.id, file_name: row.file_name, file_type: row.file_type, file_size: row.file_size }]
+      : [];
+    return { ...row, files: attached.length ? attached : legacy };
+  });
 }
 
 function saveFaceImage(dataUrl, studentNo) {
@@ -950,7 +1042,8 @@ router.post('/printing/redeem', authenticate, authorize('student'), validate(red
     return res.status(403).json({ message: 'You can only redeem printing for your own student account.' });
   }
 
-  const file = savePrintingFile(req.body);
+  const files = savePrintingFiles(req.body);
+  const firstFile = files[0] || null;
 
   const [result] = await pool.query(
     `INSERT INTO printing_redemptions
@@ -962,13 +1055,32 @@ router.post('/printing/redeem', authenticate, authorize('student'), validate(red
       pointsRequired,
       'pending',
       req.body.remarks || null,
-      file?.file_name || null,
-      file?.file_type || null,
-      file?.file_size || null,
-      file?.file_path || null,
+      firstFile?.file_name || null,
+      firstFile?.file_type || null,
+      firstFile?.file_size || null,
+      firstFile?.file_path || null,
     ],
   );
-  res.status(201).json({ message: 'Printing redemption requested.', id: result.insertId, points_required: pointsRequired });
+  if (files.length) {
+    await pool.query(
+      `INSERT INTO printing_redemption_files
+       (redemption_id, file_name, file_type, file_size, file_path)
+       VALUES ?`,
+      [files.map((file) => [
+        result.insertId,
+        file.file_name,
+        file.file_type,
+        file.file_size,
+        file.file_path,
+      ])],
+    );
+  }
+  res.status(201).json({
+    message: 'Printing redemption requested.',
+    id: result.insertId,
+    points_required: pointsRequired,
+    file_count: files.length,
+  });
 }));
 
 router.get('/printing/redemptions', authenticate, authorize('admin', 'printing_staff', 'student'), asyncHandler(async (req, res) => {
@@ -989,14 +1101,17 @@ router.get('/printing/redemptions', authenticate, authorize('admin', 'printing_s
      ORDER BY pr.requested_at DESC`,
     values,
   );
-  res.json(rows);
+  res.json(await attachPrintingFiles(rows));
 }));
 
 router.get('/printing/redemptions/:id', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
   await ensurePrintingFileColumns();
   const [[row]] = await pool.query('SELECT * FROM printing_redemptions WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ message: 'Redemption not found.' });
-  res.json(row);
+  if (req.user.role === 'student' && Number(req.user.student_id) !== Number(row.student_id)) {
+    return res.status(403).json({ message: 'You can only view your own printing request.' });
+  }
+  res.json((await attachPrintingFiles([row]))[0]);
 }));
 
 router.get('/printing/redemptions/:id/file', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -1010,6 +1125,25 @@ router.get('/printing/redemptions/:id/file', authenticate, validate(idParam, 'pa
     return res.status(404).json({ message: 'Printing file not found.' });
   }
   res.download(row.file_path, row.file_name || path.basename(row.file_path));
+}));
+
+router.get('/printing/redemptions/:id/files/:file_id', authenticate, validate(printingFileParam, 'params'), asyncHandler(async (req, res) => {
+  await ensurePrintingFileColumns();
+  const [[file]] = await pool.query(
+    `SELECT f.*, pr.student_id
+     FROM printing_redemption_files f
+     JOIN printing_redemptions pr ON pr.id = f.redemption_id
+     WHERE f.id = ? AND f.redemption_id = ?`,
+    [req.params.file_id, req.params.id],
+  );
+  if (!file) return res.status(404).json({ message: 'Printing file not found.' });
+  if (req.user.role === 'student' && Number(req.user.student_id) !== Number(file.student_id)) {
+    return res.status(403).json({ message: 'You can only download your own printing file.' });
+  }
+  if (!file.file_path || !fs.existsSync(file.file_path)) {
+    return res.status(404).json({ message: 'Printing file not found.' });
+  }
+  res.download(file.file_path, file.file_name || path.basename(file.file_path));
 }));
 
 router.put('/printing/redemptions/:id/approve', authenticate, authorize('printing_staff', 'admin'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -1069,23 +1203,49 @@ router.get('/hub/posts', authenticate, asyncHandler(async (req, res) => {
      ORDER BY p.created_at DESC`,
     [req.user.id],
   );
-  res.json(rows);
+  res.json(rows.map(withHubImages));
 }));
 
 router.post('/hub/posts', authenticate, authorize('admin'), validate(hubPostSchema), asyncHandler(async (req, res) => {
   await ensureCommunityTables();
+  const images = hubImagesFromPayload(req.body);
+  const firstImage = images[0] || null;
   const [result] = await pool.query(
-    'INSERT INTO information_posts (title, category, content, image_data, image_caption, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [req.body.title, req.body.category, req.body.content, req.body.image_data || null, req.body.image_caption || null, req.body.status, req.user.id],
+    `INSERT INTO information_posts
+     (title, category, content, image_data, image_caption, images_json, status, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      req.body.title,
+      req.body.category,
+      req.body.content,
+      firstImage?.data || null,
+      firstImage?.caption || null,
+      JSON.stringify(images),
+      req.body.status,
+      req.user.id,
+    ],
   );
   res.status(201).json({ message: 'Information post published.', id: result.insertId });
 }));
 
 router.put('/hub/posts/:id', authenticate, authorize('admin'), validate(idParam, 'params'), validate(hubPostSchema), asyncHandler(async (req, res) => {
   await ensureCommunityTables();
+  const images = hubImagesFromPayload(req.body);
+  const firstImage = images[0] || null;
   await pool.query(
-    'UPDATE information_posts SET title = ?, category = ?, content = ?, image_data = ?, image_caption = ?, status = ? WHERE id = ?',
-    [req.body.title, req.body.category, req.body.content, req.body.image_data || null, req.body.image_caption || null, req.body.status, req.params.id],
+    `UPDATE information_posts
+     SET title = ?, category = ?, content = ?, image_data = ?, image_caption = ?, images_json = ?, status = ?
+     WHERE id = ?`,
+    [
+      req.body.title,
+      req.body.category,
+      req.body.content,
+      firstImage?.data || null,
+      firstImage?.caption || null,
+      JSON.stringify(images),
+      req.body.status,
+      req.params.id,
+    ],
   );
   res.json({ message: 'Information post updated.' });
 }));

@@ -73,6 +73,13 @@ const pointsAdjustSchema = z.object({
   description: z.string().min(3),
 });
 
+const printFileSchema = z.object({
+  file_name: z.string().min(1).max(255),
+  file_type: z.string().max(120).optional().nullable(),
+  file_size: z.coerce.number().int().nonnegative(),
+  file_data: z.string().min(1).max(4_300_000),
+});
+
 const redeemSchema = z.object({
   student_id: z.coerce.number().int().positive(),
   pages_requested: z.coerce.number().int().positive(),
@@ -81,6 +88,16 @@ const redeemSchema = z.object({
   file_type: z.string().max(120).optional().nullable(),
   file_size: z.coerce.number().int().nonnegative().optional().nullable(),
   file_data: z.string().optional().nullable(),
+  files: z.array(printFileSchema).max(5, 'Upload no more than 5 files.').optional().default([]),
+}).superRefine((payload, context) => {
+  const totalSize = payload.files.reduce((sum, file) => sum + file.file_size, 0);
+  if (totalSize > 3 * 1024 * 1024) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['files'],
+      message: 'Printing files must be 3MB or smaller in total.',
+    });
+  }
 });
 
 const emailCodeSchema = z.object({
@@ -116,12 +133,20 @@ const passwordResetSchema = z.object({
   account_type: z.enum(['student', 'staff']),
 });
 
+const hubImageSchema = z.object({
+  data: z.string()
+    .max(750_000)
+    .refine((value) => /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(value), 'Invalid post photo.'),
+  caption: z.string().max(240).optional().nullable().or(z.literal('')),
+});
+
 const hubPostSchema = z.object({
   title: z.string().min(3).max(180),
   category: z.enum(['activity', 'resolution', 'announcement']).default('activity'),
   content: z.string().min(5),
   image_data: z.string().max(8000000).optional().nullable().or(z.literal('')),
   image_caption: z.string().max(240).optional().nullable().or(z.literal('')),
+  images: z.array(hubImageSchema).max(4, 'Upload no more than 4 photos.').optional().default([]),
   status: z.enum(['draft', 'published', 'archived']).default('published'),
 });
 
@@ -154,6 +179,11 @@ const settingsSchema = z.object({
   logo_data: z.string().max(1500000).optional().nullable(),
 });
 
+const printingFileParam = z.object({
+  id: z.coerce.number().int().positive(),
+  file_id: z.coerce.number().int().nonnegative(),
+});
+
 function validate(schema, target = 'body') {
   return (req, res, next) => {
     const parsed = schema.safeParse(req[target]);
@@ -171,6 +201,7 @@ function validate(schema, target = 'body') {
 module.exports = {
   validate,
   idParam,
+  printingFileParam,
   studentIdParam,
   eventIdParam,
   loginSchema,

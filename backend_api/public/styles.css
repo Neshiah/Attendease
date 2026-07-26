@@ -2763,6 +2763,228 @@ textarea {
   padding: 10px 12px;
 }
 
+.hub-multi-image-uploader {
+  grid-template-columns: 1fr;
+}
+
+.hub-image-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.hub-image-editor-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.hub-image-editor-card img {
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.hub-image-editor-card label {
+  margin: 0;
+}
+
+.hub-upload-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.hub-upload-controls > label {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+.hub-upload-controls .hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.hub-media-grid {
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: min(52vw, 480px);
+}
+
+.hub-media-count-1 {
+  grid-template-columns: 1fr;
+}
+
+.hub-media-count-3 .hub-media-button:first-child {
+  grid-row: span 2;
+}
+
+.hub-media-button {
+  background: #e8eef5;
+  border: 0;
+  border-radius: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+}
+
+.hub-media-button:hover,
+.hub-media-button:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--primary);
+  transform: none;
+}
+
+.hub-media-button img {
+  max-height: none;
+  transition: transform .25s var(--ease);
+}
+
+.hub-media-button:hover img {
+  transform: scale(1.025);
+}
+
+.hub-media-button span {
+  background: linear-gradient(transparent, rgba(7, 15, 26, .82));
+  bottom: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  left: 0;
+  padding: 28px 10px 9px;
+  position: absolute;
+  right: 0;
+  text-align: left;
+}
+
+.media-lightbox {
+  align-items: center;
+  background: rgba(5, 10, 18, .94);
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  inset: 0;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.media-lightbox figure {
+  align-items: center;
+  display: grid;
+  height: calc(100dvh - 48px);
+  justify-items: center;
+  margin: 0;
+  min-width: 0;
+}
+
+.media-lightbox img {
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(0,0,0,.42);
+  max-height: calc(100dvh - 130px);
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.media-lightbox figcaption {
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 750;
+  margin-top: 12px;
+  text-align: center;
+}
+
+.media-lightbox-count {
+  color: #aebbd0;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.media-lightbox-close,
+.media-lightbox-nav {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px;
+  color: #fff;
+  height: 48px;
+  padding: 0;
+  width: 48px;
+}
+
+.media-lightbox-close {
+  font-size: 28px;
+  position: absolute;
+  right: 20px;
+  top: 18px;
+}
+
+.media-lightbox-nav {
+  font-size: 36px;
+  justify-self: center;
+}
+
+.media-lightbox-close:hover,
+.media-lightbox-nav:hover {
+  background: rgba(255,255,255,.22);
+  box-shadow: none;
+}
+
+.selected-print-files,
+.print-file-list {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 0;
+  margin: 0 0 16px;
+  overflow: hidden;
+}
+
+.selected-print-files > div,
+.print-file-list > div {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 10px 12px;
+}
+
+.selected-print-files > div:last-child,
+.print-file-list > div:last-child {
+  border-bottom: 0;
+}
+
+.selected-print-files span,
+.print-file-list span {
+  font-weight: 800;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selected-print-files p {
+  margin: 0;
+  padding: 12px;
+}
+
+.print-file-list {
+  margin-top: 12px;
+}
+
+.print-file-list button {
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
 @media (max-width: 700px) {
   .hub-image-uploader {
     grid-template-columns: 1fr;
@@ -2770,6 +2992,47 @@ textarea {
 
   .hub-image-preview {
     min-height: 190px;
+  }
+
+  .hub-image-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-media-grid {
+    height: min(94vw, 420px);
+  }
+
+  .media-lightbox {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    padding: 14px 8px;
+  }
+
+  .media-lightbox figure {
+    height: calc(100dvh - 28px);
+  }
+
+  .media-lightbox img {
+    max-height: calc(100dvh - 120px);
+  }
+
+  .media-lightbox-close {
+    right: 10px;
+    top: 10px;
+  }
+
+  .media-lightbox-nav {
+    height: 40px;
+    width: 40px;
+  }
+
+  .selected-print-files > div,
+  .print-file-list > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .print-file-list button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 
@@ -3791,7 +4054,10 @@ html[data-theme="dark"] .quick-actions,
 html[data-theme="dark"] .feed-title,
 html[data-theme="dark"] .comment-item,
 html[data-theme="dark"] .hub-image-uploader,
+html[data-theme="dark"] .hub-image-editor-card,
 html[data-theme="dark"] .hub-media,
+html[data-theme="dark"] .selected-print-files,
+html[data-theme="dark"] .print-file-list,
 html[data-theme="dark"] .logo-settings,
 html[data-theme="dark"] .toggle-card,
 html[data-theme="dark"] .profile-card,
