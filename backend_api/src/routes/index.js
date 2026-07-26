@@ -301,6 +301,52 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeIdentity(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function duplicateAccountError(field) {
+  const messages = {
+    student_no: 'An account with this school ID already exists.',
+    email: 'An account with this Gmail address already exists.',
+    name: 'A student account with this full name already exists.',
+  };
+  const error = new Error(messages[field] || 'This student account already exists.');
+  error.status = 409;
+  error.field = field;
+  return error;
+}
+
+function normalizeStudentIdentity(body) {
+  body.name = String(body.name || '').trim().replace(/\s+/g, ' ');
+  body.email = normalizeEmail(body.email);
+  body.student_no = String(body.student_no || '').trim();
+  return body;
+}
+
+async function assertUniqueStudentIdentity(connection, data) {
+  const normalizedEmail = normalizeEmail(data.email);
+  const normalizedStudentNo = normalizeIdentity(data.student_no);
+  const normalizedName = normalizeIdentity(data.name);
+  const [[emailMatch]] = await connection.query(
+    'SELECT id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1',
+    [normalizedEmail],
+  );
+  if (emailMatch) throw duplicateAccountError('email');
+
+  const [students] = await connection.query(
+    `SELECT s.student_no, u.name
+     FROM students s
+     JOIN users u ON u.id = s.user_id`,
+  );
+  if (students.some((student) => normalizeIdentity(student.student_no) === normalizedStudentNo)) {
+    throw duplicateAccountError('student_no');
+  }
+  if (students.some((student) => normalizeIdentity(student.name) === normalizedName)) {
+    throw duplicateAccountError('name');
+  }
+}
+
 async function createEmailCode(email, purpose) {
   const code = makeCode();
   await pool.query(
@@ -380,7 +426,9 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   await ensureRegistrationTables();
-  const email = normalizeEmail(req.body.email);
+  normalizeStudentIdentity(req.body);
+  const email = req.body.email;
+  await assertUniqueStudentIdentity(pool, req.body);
   const ok = await verifyEmailCode(email, req.body.email_code, 'registration', true);
   if (!ok) return res.status(400).json({ message: 'Please verify your Gmail before submitting registration.' });
   if (req.body.liveness_passed !== 'true') {
@@ -406,6 +454,11 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
     res.status(201).json({ message: 'Student registered successfully.', student_id: studentResult.insertId });
   } catch (error) {
     await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw String(error.sqlMessage || '').toLowerCase().includes('student_no')
+        ? duplicateAccountError('student_no')
+        : duplicateAccountError('email');
+    }
     throw error;
   } finally {
     connection.release();
@@ -580,6 +633,8 @@ router.post('/students', authenticate, authorize('admin'), validate(studentSchem
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+    normalizeStudentIdentity(req.body);
+    await assertUniqueStudentIdentity(connection, req.body);
     const hashed = await bcrypt.hash(req.body.password || req.body.student_no, 10);
     const [userResult] = await connection.query(
       'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
@@ -593,6 +648,11 @@ router.post('/students', authenticate, authorize('admin'), validate(studentSchem
     res.status(201).json({ message: 'Student created.', id: studentResult.insertId });
   } catch (error) {
     await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw String(error.sqlMessage || '').toLowerCase().includes('student_no')
+        ? duplicateAccountError('student_no')
+        : duplicateAccountError('email');
+    }
     throw error;
   } finally {
     connection.release();

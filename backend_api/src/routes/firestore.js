@@ -141,6 +141,87 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeIdentity(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function duplicateAccountError(field) {
+  const messages = {
+    student_no: 'An account with this school ID already exists.',
+    email: 'An account with this Gmail address already exists.',
+    name: 'A student account with this full name already exists.',
+  };
+  const error = new Error(messages[field] || 'This student account already exists.');
+  error.status = 409;
+  error.field = field;
+  return error;
+}
+
+function normalizeStudentIdentity(body) {
+  body.name = String(body.name || '').trim().replace(/\s+/g, ' ');
+  body.email = normalizeEmail(body.email);
+  body.student_no = String(body.student_no || '').trim();
+  return body;
+}
+
+function identityKey(type, value) {
+  return `${type}_${crypto.createHash('sha256').update(normalizeIdentity(value)).digest('hex')}`;
+}
+
+async function assertNoExistingStudentIdentity(data) {
+  const [users, students] = await Promise.all([listDocs('users'), listDocs('students')]);
+  if (users.some((user) => normalizeEmail(user.email) === normalizeEmail(data.email))) {
+    throw duplicateAccountError('email');
+  }
+  if (students.some((student) => normalizeIdentity(student.student_no) === normalizeIdentity(data.student_no))) {
+    throw duplicateAccountError('student_no');
+  }
+  const studentUserIds = new Set(students.map((student) => Number(student.user_id)));
+  if (users.some((user) => studentUserIds.has(Number(user.id)) && normalizeIdentity(user.name) === normalizeIdentity(data.name))) {
+    throw duplicateAccountError('name');
+  }
+}
+
+async function createStudentAccount(userData, studentData) {
+  const identityEntries = [
+    { field: 'student_no', value: studentData.student_no },
+    { field: 'email', value: userData.email },
+    { field: 'name', value: userData.name },
+  ];
+  await assertNoExistingStudentIdentity({
+    name: userData.name,
+    email: userData.email,
+    student_no: studentData.student_no,
+  });
+
+  const [userId, studentId] = await Promise.all([nextId('users'), nextId('students')]);
+  const keyRefs = identityEntries.map((entry) => (
+    db.collection('student_identity_keys').doc(identityKey(entry.field, entry.value))
+  ));
+  await db.runTransaction(async (transaction) => {
+    const keySnapshots = await transaction.getAll(...keyRefs);
+    const duplicateIndex = keySnapshots.findIndex((snapshot) => snapshot.exists);
+    if (duplicateIndex >= 0) throw duplicateAccountError(identityEntries[duplicateIndex].field);
+
+    transaction.set(db.collection('users').doc(String(userId)), { ...userData, id: userId });
+    transaction.set(db.collection('students').doc(String(studentId)), {
+      ...studentData,
+      id: studentId,
+      user_id: userId,
+    });
+    keyRefs.forEach((ref, index) => {
+      transaction.set(ref, {
+        type: identityEntries[index].field,
+        value: normalizeIdentity(identityEntries[index].value),
+        user_id: userId,
+        student_id: studentId,
+        created_at: now(),
+      });
+    });
+  });
+  return { userId, studentId };
+}
+
 async function createEmailCode(email, purpose) {
   const code = makeCode();
   await createDoc('email_verification_codes', {
@@ -237,20 +318,20 @@ router.post('/registration/verify-code', validate(verifyEmailCodeSchema), asyncH
 router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(async (req, res) => {
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
-  const email = normalizeEmail(req.body.email);
+  normalizeStudentIdentity(req.body);
+  const email = req.body.email;
+  await assertNoExistingStudentIdentity(req.body);
   const ok = await verifyEmailCode(email, req.body.email_code, 'registration', true);
   if (!ok) return res.status(400).json({ message: 'Please verify your Gmail before submitting registration.' });
   const hashed = await bcrypt.hash(req.body.password, 10);
-  const userId = await createDoc('users', {
+  const { studentId } = await createStudentAccount({
     name: req.body.name,
     email,
     password: hashed,
     role: 'student',
     status: 'active',
     created_at: now(),
-  });
-  const studentId = await createDoc('students', {
-    user_id: userId,
+  }, {
     student_no: req.body.student_no,
     course: req.body.course,
     year_level: req.body.year_level,
@@ -357,16 +438,15 @@ router.get('/students', authenticate, authorize('admin', 'printing_staff'), asyn
 }));
 
 router.post('/students', authenticate, authorize('admin'), validate(studentSchema), asyncHandler(async (req, res) => {
-  const userId = await createDoc('users', {
+  normalizeStudentIdentity(req.body);
+  const { studentId } = await createStudentAccount({
     name: req.body.name,
     email: req.body.email,
     password: await bcrypt.hash(req.body.password || 'password123', 10),
     role: 'student',
     status: 'active',
     created_at: now(),
-  });
-  const studentId = await createDoc('students', {
-    user_id: userId,
+  }, {
     student_no: req.body.student_no,
     course: req.body.course,
     year_level: req.body.year_level,
