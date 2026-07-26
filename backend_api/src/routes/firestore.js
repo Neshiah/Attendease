@@ -260,6 +260,7 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
     email_verified_at: now(),
     face_image_data: req.body.face_data,
     face_verified_at: now(),
+    face_liveness_method: req.body.liveness_method,
     created_at: now(),
   });
   res.status(201).json({ message: 'Student registered successfully.', student_id: studentId });

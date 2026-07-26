@@ -144,6 +144,7 @@ async function ensureRegistrationTables() {
   await ensureColumn('students', 'face_image_path', 'VARCHAR(500) NULL', 'email_verified_at');
   await ensureColumn('students', 'face_image_data', 'LONGTEXT NULL', 'face_image_path');
   await ensureColumn('students', 'face_verified_at', 'DATETIME NULL', 'face_image_data');
+  await ensureColumn('students', 'face_liveness_method', 'VARCHAR(80) NULL', 'face_verified_at');
   await ensureTable(
     'email_verification_codes',
     `CREATE TABLE email_verification_codes (
@@ -397,9 +398,9 @@ router.post('/registration/student', validate(selfRegisterSchema), asyncHandler(
     );
     const [studentResult] = await connection.query(
       `INSERT INTO students
-       (user_id, student_no, course, year_level, section, contact_no, email_verified_at, face_image_path, face_image_data, face_verified_at)
-       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW())`,
-      [userResult.insertId, req.body.student_no, req.body.course, req.body.year_level, req.body.section, req.body.contact_no || null, face.path, face.data],
+       (user_id, student_no, course, year_level, section, contact_no, email_verified_at, face_image_path, face_image_data, face_verified_at, face_liveness_method)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), ?)`,
+      [userResult.insertId, req.body.student_no, req.body.course, req.body.year_level, req.body.section, req.body.contact_no || null, face.path, face.data, req.body.liveness_method],
     );
     await connection.commit();
     res.status(201).json({ message: 'Student registered successfully.', student_id: studentResult.insertId });

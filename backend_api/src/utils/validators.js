@@ -89,8 +89,11 @@ const verifyEmailCodeSchema = z.object({
 
 const selfRegisterSchema = studentSchema.extend({
   email_code: z.string().min(4).max(12),
-  face_data: z.string().min(20),
+  face_data: z.string()
+    .max(5_000_000)
+    .startsWith('data:image/jpeg;base64,', 'A verified JPEG face capture is required.'),
   liveness_passed: z.literal('true'),
+  liveness_method: z.literal('mediapipe_face_landmarker_v1'),
 });
 
 const passwordResetSchema = z.object({

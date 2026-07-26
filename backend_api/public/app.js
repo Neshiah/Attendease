@@ -634,28 +634,59 @@ function renderStudentRegistration() {
           <button type="button" id="sendRegCode">Send Gmail Code</button>
           <label class="inline-field">Verification Code <input name="email_code" required /></label>
         </div>
-        <div class="camera-box">
-          <div class="face-frame">
-            <video id="faceVideo" autoplay playsinline></video>
+        <div class="camera-box liveness-checker">
+          <div class="liveness-heading">
+            <div>
+              <span class="eyebrow">Identity verification</span>
+              <h3>AI-assisted liveness check</h3>
+            </div>
+            <span class="ai-status-chip" id="aiStatusChip">AI model idle</span>
+          </div>
+          <div class="face-frame" id="faceFrame">
+            <video id="faceVideo" autoplay muted playsinline></video>
+            <img id="facePreview" class="hidden" alt="Verified student face preview" />
             <span class="face-guide" aria-hidden="true"></span>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <span class="camera-placeholder-icon" aria-hidden="true"></span>
+              <strong>Camera is off</strong>
+              <small>Your live camera stays on this device during the check.</small>
+            </div>
+            <span class="face-quality-badge" id="faceQualityBadge">Waiting for camera</span>
           </div>
           <canvas id="faceCanvas" class="hidden"></canvas>
           <input type="hidden" name="face_data" id="faceData" />
           <input type="hidden" name="liveness_passed" id="livenessPassed" />
-          <div class="liveness-card">
-            <strong>Liveness Check</strong>
-            <span id="livenessPrompt">Start the camera to get your liveness instruction.</span>
+          <input type="hidden" name="liveness_method" value="mediapipe_face_landmarker_v1" />
+          <div class="liveness-card" aria-live="polite">
+            <div class="liveness-steps" aria-label="Liveness check progress">
+              <div class="liveness-step" data-liveness-step="position">
+                <span>1</span>
+                <small>Position</small>
+              </div>
+              <div class="liveness-step" data-liveness-step="challenge">
+                <span>2</span>
+                <small>Actions</small>
+              </div>
+              <div class="liveness-step" data-liveness-step="verified">
+                <span>3</span>
+                <small>Verified</small>
+              </div>
+            </div>
+            <div class="liveness-progress" aria-hidden="true"><span id="livenessProgress"></span></div>
+            <strong id="livenessPrompt">Ready for your secure face check</strong>
+            <span id="livenessDetail">Start the camera, keep one face inside the guide, and follow the on-screen actions.</span>
           </div>
           <div class="actions">
-            <button type="button" id="startCamera">Start Camera</button>
-            <button type="button" class="secondary" id="captureFace">Capture Face</button>
+            <button type="button" id="startCamera">Start AI Check</button>
+            <button type="button" class="secondary" id="retryLiveness" disabled>Retry</button>
           </div>
-          <p class="hint" id="faceStatus">Face photo is required before registration.</p>
+          <div class="liveness-trust">
+            <span>One face required</span>
+            <span>Random motion prompts</span>
+            <span>Processed on device</span>
+          </div>
+          <p class="hint" id="faceStatus">A live face check is required. A saved photo cannot complete this step.</p>
         </div>
-        <label>Phone Camera Fallback
-          <input id="faceImageFile" type="file" accept="image/*" capture="user" />
-          <span class="hint">If live camera is blocked on your phone, tap here and take a face photo.</span>
-        </label>
         <button type="submit">Submit Registration</button>
         <p class="hint"><a href="/">Back to Student Login</a></p>
       </form>
@@ -664,13 +695,196 @@ function renderStudentRegistration() {
   document.querySelector('#authThemeToggle').addEventListener('click', toggleTheme);
   enhancePasswordToggles();
   let stream = null;
-  let livenessStartedAt = 0;
-  const livenessChallenges = [
-    'Center your face, then slowly blink before capture.',
-    'Center your face, then slowly turn your head left and back.',
-    'Center your face, then slowly turn your head right and back.',
-    'Center your face, then smile before capture.',
-  ];
+  let landmarker = null;
+  let animationFrame = null;
+  let checkSession = null;
+  const video = document.querySelector('#faceVideo');
+  const startButton = document.querySelector('#startCamera');
+  const retryButton = document.querySelector('#retryLiveness');
+  const faceFrame = document.querySelector('#faceFrame');
+  const aiStatusChip = document.querySelector('#aiStatusChip');
+  const faceQualityBadge = document.querySelector('#faceQualityBadge');
+  const progressBar = document.querySelector('#livenessProgress');
+  const prompt = document.querySelector('#livenessPrompt');
+  const detail = document.querySelector('#livenessDetail');
+  const status = document.querySelector('#faceStatus');
+
+  const setStep = (step, progress = 0) => {
+    const order = ['position', 'challenge', 'verified'];
+    const activeIndex = order.indexOf(step);
+    document.querySelectorAll('[data-liveness-step]').forEach((element, index) => {
+      element.classList.toggle('active', index === activeIndex);
+      element.classList.toggle('complete', index < activeIndex || step === 'verified');
+    });
+    progressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  };
+
+  const stopCamera = () => {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    video.srcObject = null;
+  };
+
+  const resetLiveness = () => {
+    stopCamera();
+    checkSession = null;
+    document.querySelector('#faceData').value = '';
+    document.querySelector('#livenessPassed').value = '';
+    document.querySelector('#facePreview').classList.add('hidden');
+    video.classList.remove('hidden');
+    document.querySelector('#cameraPlaceholder').classList.remove('hidden');
+    faceFrame.classList.remove('camera-active', 'face-ready', 'verified', 'face-warning');
+    aiStatusChip.className = 'ai-status-chip';
+    aiStatusChip.textContent = 'AI model idle';
+    faceQualityBadge.textContent = 'Waiting for camera';
+    prompt.textContent = 'Ready for your secure face check';
+    detail.textContent = 'Start the camera, keep one face inside the guide, and follow the on-screen actions.';
+    status.textContent = 'A live face check is required. A saved photo cannot complete this step.';
+    startButton.disabled = false;
+    startButton.textContent = 'Start AI Check';
+    retryButton.disabled = true;
+    setStep('position', 0);
+  };
+
+  const finishLiveness = () => {
+    const canvas = document.querySelector('#faceCanvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const faceData = canvas.toDataURL('image/jpeg', 0.86);
+    document.querySelector('#faceData').value = faceData;
+    document.querySelector('#livenessPassed').value = 'true';
+    const preview = document.querySelector('#facePreview');
+    preview.src = faceData;
+    preview.classList.remove('hidden');
+    video.classList.add('hidden');
+    document.querySelector('#cameraPlaceholder').classList.add('hidden');
+    faceFrame.classList.remove('face-warning');
+    faceFrame.classList.add('verified');
+    aiStatusChip.className = 'ai-status-chip success';
+    aiStatusChip.textContent = 'AI check passed';
+    faceQualityBadge.textContent = 'Live face verified';
+    prompt.textContent = 'Identity check complete';
+    detail.textContent = 'Your centered profile photo was captured after the live motion challenges.';
+    status.textContent = 'Liveness passed. You can now submit your registration.';
+    startButton.disabled = true;
+    startButton.textContent = 'Verified';
+    retryButton.disabled = false;
+    setStep('verified', 100);
+    stopCamera();
+  };
+
+  const failLiveness = (message) => {
+    stopCamera();
+    checkSession = null;
+    faceFrame.classList.remove('camera-active', 'face-ready');
+    faceFrame.classList.add('face-warning');
+    aiStatusChip.className = 'ai-status-chip error';
+    aiStatusChip.textContent = 'Check interrupted';
+    faceQualityBadge.textContent = 'Try again';
+    prompt.textContent = 'Liveness check was not completed';
+    detail.textContent = message;
+    status.textContent = message;
+    startButton.disabled = false;
+    startButton.textContent = 'Try Again';
+    retryButton.disabled = false;
+  };
+
+  const runFrameCheck = () => {
+    if (!checkSession || !stream || video.readyState < 2) return;
+    const now = performance.now();
+    if (now - checkSession.startedAt > 30000) {
+      failLiveness('The check timed out. Improve the lighting, keep your face centered, and retry.');
+      return;
+    }
+    if (now - checkSession.lastScan < 90 || video.currentTime === checkSession.lastVideoTime) {
+      animationFrame = requestAnimationFrame(runFrameCheck);
+      return;
+    }
+    checkSession.lastScan = now;
+    checkSession.lastVideoTime = video.currentTime;
+    try {
+      const result = landmarker.detectForVideo(video, now);
+      const metrics = getLivenessMetrics(result);
+      advanceLivenessSession(checkSession, metrics, {
+        faceFrame,
+        faceQualityBadge,
+        prompt,
+        detail,
+        setStep,
+        finish: finishLiveness,
+      });
+    } catch (error) {
+      failLiveness('The AI face model stopped unexpectedly. Please retry the check.');
+      return;
+    }
+    if (checkSession) animationFrame = requestAnimationFrame(runFrameCheck);
+  };
+
+  const startLiveness = async () => {
+    resetLiveness();
+    if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      failLiveness('Camera access requires the secure HTTPS website.');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      failLiveness('This browser does not support live camera access. Use the latest Chrome, Edge, or Safari.');
+      return;
+    }
+    startButton.disabled = true;
+    startButton.textContent = 'Loading AI...';
+    aiStatusChip.className = 'ai-status-chip loading';
+    aiStatusChip.textContent = 'Loading AI model';
+    prompt.textContent = 'Preparing secure face detection';
+    detail.textContent = 'Please allow camera access when your browser asks.';
+    status.textContent = 'Loading the on-device face landmark model...';
+    try {
+      const modelPromise = loadFaceLandmarker().then((model) => {
+        aiStatusChip.className = 'ai-status-chip active';
+        aiStatusChip.textContent = 'AI model ready';
+        status.textContent = 'AI is ready. Waiting for camera permission...';
+        return model;
+      });
+      const cameraPromise = navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 720 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        }).then((cameraStream) => {
+          prompt.textContent = 'Starting your camera';
+          detail.textContent = 'Keep this page open and place your face inside the guide.';
+          return cameraStream;
+        });
+      [landmarker, stream] = await Promise.all([modelPromise, cameraPromise]);
+      video.srcObject = stream;
+      await video.play();
+      document.querySelector('#cameraPlaceholder').classList.add('hidden');
+      faceFrame.classList.add('camera-active');
+      aiStatusChip.className = 'ai-status-chip active';
+      aiStatusChip.textContent = 'AI analyzing';
+      faceQualityBadge.textContent = 'Find your face';
+      prompt.textContent = 'Center your face';
+      detail.textContent = 'Look straight ahead and hold still inside the oval guide.';
+      status.textContent = 'The check will start automatically when exactly one face is centered.';
+      startButton.textContent = 'Checking...';
+      retryButton.disabled = false;
+      checkSession = createLivenessSession();
+      setStep('position', 8);
+      animationFrame = requestAnimationFrame(runFrameCheck);
+    } catch (error) {
+      const message = error?.name === 'NotAllowedError'
+        ? 'Camera permission was blocked. Allow camera access in your browser settings, then retry.'
+        : error?.name === 'NotFoundError'
+          ? 'No camera was found on this device.'
+          : 'The AI model or camera could not start. Check your connection and camera permission, then retry.';
+      failLiveness(message);
+    }
+  };
+
   document.querySelector('#sendRegCode').addEventListener('click', async () => {
     try {
       const data = await api('/registration/send-code', {
@@ -682,64 +896,25 @@ function renderStudentRegistration() {
       toast(error.message);
     }
   });
-  document.querySelector('#startCamera').addEventListener('click', async () => {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      document.querySelector('#faceVideo').srcObject = stream;
-      const challenge = livenessChallenges[Math.floor(Math.random() * livenessChallenges.length)];
-      livenessStartedAt = Date.now();
-      document.querySelector('#livenessPrompt').textContent = challenge;
-      document.querySelector('#faceStatus').textContent = 'Camera active. Keep your face inside the oval guide, complete the liveness step, then capture.';
-    } catch (error) {
-      toast('Camera permission is required for face authentication.');
-    }
-  });
-  document.querySelector('#captureFace').addEventListener('click', async () => {
-    const video = document.querySelector('#faceVideo');
-    const canvas = document.querySelector('#faceCanvas');
-    if (!video.videoWidth) {
-      toast('Start the camera first.');
-      return;
-    }
-    if (!livenessStartedAt || Date.now() - livenessStartedAt < 1500) {
-      toast('Complete the liveness instruction before capturing.');
-      return;
-    }
-    const centered = await checkCenteredFace(video);
-    if (!centered.ok) {
-      toast(centered.message);
-      return;
-    }
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    document.querySelector('#faceData').value = canvas.toDataURL('image/jpeg', 0.86);
-    document.querySelector('#livenessPassed').value = 'true';
-    document.querySelector('#faceStatus').textContent = 'Face captured and liveness check completed.';
-  });
-  document.querySelector('#faceImageFile').addEventListener('change', async (event) => {
-    const file = event.currentTarget.files[0];
-    if (!file) return;
-    try {
-      document.querySelector('#faceData').value = await readFileAsDataUrl(file);
-      document.querySelector('#livenessPassed').value = 'true';
-      document.querySelector('#faceStatus').textContent = 'Face photo selected successfully. Live camera liveness is skipped for phone fallback.';
-    } catch (error) {
-      toast(error.message);
-    }
-  });
+  startButton.addEventListener('click', startLiveness);
+  retryButton.addEventListener('click', startLiveness);
   document.querySelector('#registerForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
+      if (document.querySelector('#livenessPassed').value !== 'true' || !document.querySelector('#faceData').value) {
+        throw new Error('Complete the AI-assisted liveness check before submitting.');
+      }
       const data = formData(event.currentTarget);
       await api('/registration/student', { method: 'POST', body: JSON.stringify(data) });
-      stream?.getTracks().forEach((track) => track.stop());
+      stopCamera();
       toast('Registration saved. You can now login.');
       setTimeout(() => window.location.href = '/', 1000);
     } catch (error) {
       toast(error.message);
     }
   });
+  window.addEventListener('pagehide', stopCamera, { once: true });
+  setStep('position', 0);
 }
 
 function renderShell() {
@@ -1361,29 +1536,194 @@ function bindOfficerForm(rows) {
   });
 }
 
-async function checkCenteredFace(video) {
-  if (!('FaceDetector' in window)) {
-    return { ok: true };
+const FACE_LANDMARKER_VERSION = '0.10.35';
+const FACE_LANDMARKER_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+let faceLandmarkerLoader = null;
+
+function loadFaceLandmarker() {
+  if (!faceLandmarkerLoader) {
+    faceLandmarkerLoader = (async () => {
+      const packageRoot = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${FACE_LANDMARKER_VERSION}`;
+      const { FaceLandmarker, FilesetResolver } = await import(`${packageRoot}/vision_bundle.mjs`);
+      const fileset = await FilesetResolver.forVisionTasks(`${packageRoot}/wasm`);
+      const options = {
+        baseOptions: {
+          modelAssetPath: FACE_LANDMARKER_MODEL,
+          delegate: 'GPU',
+        },
+        runningMode: 'VIDEO',
+        numFaces: 2,
+        minFaceDetectionConfidence: 0.65,
+        minFacePresenceConfidence: 0.65,
+        minTrackingConfidence: 0.65,
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: false,
+      };
+      try {
+        return await FaceLandmarker.createFromOptions(fileset, options);
+      } catch (gpuError) {
+        delete options.baseOptions.delegate;
+        return FaceLandmarker.createFromOptions(fileset, options);
+      }
+    })().catch((error) => {
+      faceLandmarkerLoader = null;
+      throw error;
+    });
   }
-  try {
-    const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
-    const faces = await detector.detect(video);
-    if (faces.length !== 1) {
-      return { ok: false, message: 'Make sure exactly one face is visible.' };
+  return faceLandmarkerLoader;
+}
+
+function createLivenessSession() {
+  const challenges = [
+    { key: 'blink', prompt: 'Blink both eyes', detail: 'Close both eyes naturally, then open them again.' },
+    { key: 'smile', prompt: 'Smile, then relax', detail: 'Give a clear smile, then return to a neutral expression.' },
+    { key: 'turn', prompt: 'Turn and return', detail: 'Slowly turn your head to either side, then face the camera again.' },
+  ].sort(() => Math.random() - 0.5).slice(0, 2);
+  return {
+    startedAt: performance.now(),
+    lastScan: 0,
+    lastVideoTime: -1,
+    phase: 'position',
+    holdStartedAt: 0,
+    challengeIndex: 0,
+    challengeActivated: false,
+    challenges,
+    baseline: null,
+    badFrameCount: 0,
+  };
+}
+
+function blendshapeMap(result) {
+  const categories = result.faceBlendshapes?.[0]?.categories || [];
+  return Object.fromEntries(categories.map((category) => [category.categoryName, category.score]));
+}
+
+function getLivenessMetrics(result) {
+  const faceCount = result.faceLandmarks?.length || 0;
+  if (faceCount !== 1) return { valid: false, faceCount };
+  const landmarks = result.faceLandmarks[0];
+  const xs = landmarks.map((point) => point.x);
+  const ys = landmarks.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const centerX = minX + width / 2;
+  const centerY = minY + height / 2;
+  const centered = Math.abs(centerX - 0.5) < 0.105 && Math.abs(centerY - 0.49) < 0.135;
+  const sizeOk = width > 0.2 && width < 0.62 && height > 0.28 && height < 0.8;
+  const shapes = blendshapeMap(result);
+  const blink = ((shapes.eyeBlinkLeft || 0) + (shapes.eyeBlinkRight || 0)) / 2;
+  const smile = ((shapes.mouthSmileLeft || 0) + (shapes.mouthSmileRight || 0)) / 2;
+  const nose = landmarks[1];
+  const leftSide = landmarks[234];
+  const rightSide = landmarks[454];
+  const faceMidX = (leftSide.x + rightSide.x) / 2;
+  const sideDistance = Math.max(0.001, Math.abs(rightSide.x - leftSide.x));
+  const turn = Math.abs(nose.x - faceMidX) / sideDistance;
+  return {
+    valid: true,
+    centered,
+    sizeOk,
+    blink,
+    smile,
+    turn,
+  };
+}
+
+function advanceLivenessSession(session, metrics, ui) {
+  const now = performance.now();
+  if (!metrics.valid) {
+    session.holdStartedAt = 0;
+    session.badFrameCount += 1;
+    ui.faceFrame.classList.add('face-warning');
+    ui.faceFrame.classList.remove('face-ready');
+    ui.faceQualityBadge.textContent = metrics.faceCount > 1 ? 'Only one face allowed' : 'No face detected';
+    ui.prompt.textContent = metrics.faceCount > 1 ? 'Only one person may be visible' : 'Place your face in the guide';
+    ui.detail.textContent = metrics.faceCount > 1 ? 'Ask other people to move out of the camera view.' : 'Use even lighting and look directly at the camera.';
+    return;
+  }
+  if (!metrics.centered || !metrics.sizeOk) {
+    session.holdStartedAt = 0;
+    session.badFrameCount += 1;
+    ui.faceFrame.classList.add('face-warning');
+    ui.faceFrame.classList.remove('face-ready');
+    ui.faceQualityBadge.textContent = !metrics.sizeOk ? 'Adjust your distance' : 'Center your face';
+    ui.prompt.textContent = !metrics.sizeOk ? 'Move closer or farther' : 'Center your face';
+    ui.detail.textContent = 'Fit your entire face inside the oval and look straight ahead.';
+    return;
+  }
+
+  ui.faceFrame.classList.remove('face-warning');
+  ui.faceFrame.classList.add('face-ready');
+  ui.faceQualityBadge.textContent = 'Face detected';
+
+  if (session.phase === 'position') {
+    if (metrics.blink > 0.32 || metrics.turn > 0.115) {
+      session.holdStartedAt = 0;
+      ui.prompt.textContent = 'Look straight at the camera';
+      ui.detail.textContent = 'Keep both eyes open and hold a neutral position.';
+      return;
     }
-    const face = faces[0].boundingBox;
-    const faceCenterX = face.x + face.width / 2;
-    const faceCenterY = face.y + face.height / 2;
-    const targetX = video.videoWidth / 2;
-    const targetY = video.videoHeight / 2;
-    const xOk = Math.abs(faceCenterX - targetX) < video.videoWidth * 0.18;
-    const yOk = Math.abs(faceCenterY - targetY) < video.videoHeight * 0.2;
-    const sizeOk = face.width > video.videoWidth * 0.18 && face.width < video.videoWidth * 0.75;
-    if (!xOk || !yOk) return { ok: false, message: 'Center your face inside the oval guide.' };
-    if (!sizeOk) return { ok: false, message: 'Move closer or farther so your face fits the oval guide.' };
-    return { ok: true };
-  } catch (error) {
-    return { ok: true };
+    if (!session.holdStartedAt) session.holdStartedAt = now;
+    const holdProgress = Math.min(1, (now - session.holdStartedAt) / 900);
+    ui.setStep('position', 8 + holdProgress * 24);
+    ui.prompt.textContent = holdProgress < 1 ? 'Hold still for a moment' : 'Face position confirmed';
+    ui.detail.textContent = 'Keep looking straight at the camera.';
+    if (holdProgress < 1) return;
+    session.baseline = { blink: metrics.blink, smile: metrics.smile, turn: metrics.turn };
+    session.phase = 'challenge';
+    session.holdStartedAt = 0;
+  }
+
+  const challenge = session.challenges[session.challengeIndex];
+  if (!challenge) {
+    session.phase = 'verified';
+    ui.finish();
+    return;
+  }
+  ui.setStep('challenge', 36 + (session.challengeIndex / session.challenges.length) * 52);
+  ui.prompt.textContent = challenge.prompt;
+  ui.detail.textContent = challenge.detail;
+  ui.faceQualityBadge.textContent = `Action ${session.challengeIndex + 1} of ${session.challenges.length}`;
+
+  const baseline = session.baseline || { blink: 0, smile: 0, turn: 0 };
+  const activated = challenge.key === 'blink'
+    ? metrics.blink > Math.max(0.5, baseline.blink + 0.3)
+    : challenge.key === 'smile'
+      ? metrics.smile > Math.max(0.42, baseline.smile + 0.22)
+      : metrics.turn > Math.max(0.105, baseline.turn + 0.065);
+  if (!session.challengeActivated && activated) {
+    session.challengeActivated = true;
+    ui.detail.textContent = challenge.key === 'blink'
+      ? 'Good. Open your eyes again.'
+      : challenge.key === 'smile'
+        ? 'Good. Relax your expression.'
+        : 'Good. Return to the center.';
+    return;
+  }
+  if (!session.challengeActivated) return;
+
+  const returned = challenge.key === 'blink'
+    ? metrics.blink < Math.max(0.25, baseline.blink + 0.12)
+    : challenge.key === 'smile'
+      ? metrics.smile < Math.max(0.32, baseline.smile + 0.13)
+      : metrics.turn < Math.max(0.075, baseline.turn + 0.035);
+  if (!returned) return;
+
+  session.challengeIndex += 1;
+  session.challengeActivated = false;
+  session.baseline = { blink: metrics.blink, smile: metrics.smile, turn: metrics.turn };
+  ui.setStep('challenge', 36 + (session.challengeIndex / session.challenges.length) * 52);
+  if (session.challengeIndex >= session.challenges.length) {
+    session.phase = 'verified';
+    ui.finish();
+  } else {
+    const next = session.challenges[session.challengeIndex];
+    ui.prompt.textContent = 'First action complete';
+    ui.detail.textContent = `Next: ${next.prompt.toLowerCase()}.`;
   }
 }
 
