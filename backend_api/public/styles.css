@@ -3886,7 +3886,13 @@ html[data-theme="dark"] .logo-img {
   }
 
   .top-search label {
+    font-size: 0;
+    gap: 0;
     max-width: none;
+  }
+
+  .top-search input {
+    font-size: 13px;
   }
 
   .layout {
@@ -3988,6 +3994,17 @@ html[data-theme="dark"] .logo-img {
 
   .toolbar {
     align-items: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toolbar > button,
+  .toolbar > .actions {
+    width: 100%;
+  }
+
+  .toolbar > button {
+    min-height: 44px;
   }
 
   .directory-card {

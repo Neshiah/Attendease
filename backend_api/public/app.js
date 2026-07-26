@@ -20,8 +20,7 @@ let cachedBranding = JSON.parse(localStorage.getItem('systemSettings') || 'null'
 
 const navByRole = {
   student: [
-    ['dashboard', 'Dashboard'],
-    ['hub', 'Information Hub'],
+    ['hub', 'Home'],
     ['officers', 'Officers'],
     ['events', 'Events'],
     ['scan', 'Scan QR'],
@@ -108,7 +107,8 @@ function navIcon(key, label) {
     users: 'US',
     settings: 'SE',
   };
-  return `<span class="nav-icon" aria-hidden="true">${esc(icons[key] || (navShortLabels[key] || label).slice(0, 2))}</span>`;
+  const icon = label === 'Home' ? 'HM' : (icons[key] || (navShortLabels[key] || label).slice(0, 2));
+  return `<span class="nav-icon" aria-hidden="true">${esc(icon)}</span>`;
 }
 
 function saveSession(data) {
@@ -522,7 +522,7 @@ async function renderLogin() {
         localStorage.setItem('systemSettings', JSON.stringify(data.settings));
       }
       saveSession(data);
-      state.active = 'dashboard';
+      state.active = data.user.role === 'student' ? 'hub' : 'dashboard';
       renderShell();
     } catch (error) {
       toast(error.message);
@@ -744,6 +744,9 @@ function renderStudentRegistration() {
 
 function renderShell() {
   const items = navByRole[state.user.role] || navByRole.student;
+  if (!items.some(([key]) => key === state.active)) {
+    state.active = state.user.role === 'student' ? 'hub' : 'dashboard';
+  }
   app.innerHTML = `
     <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
@@ -774,7 +777,7 @@ function renderShell() {
       </header>
       <section class="top-search">
         <label>Find page
-          <input id="pageSearchInput" list="pageSearchOptions" placeholder="Search Dashboard, Officers, Attendance..." />
+          <input id="pageSearchInput" list="pageSearchOptions" placeholder="${state.user.role === 'student' ? 'Search Home, Events, Wallet...' : 'Search Dashboard, Officers, Attendance...'}" />
         </label>
         <datalist id="pageSearchOptions">
           ${items.map(([key, label]) => `<option value="${esc(label)}"></option>`).join('')}
@@ -1037,10 +1040,16 @@ function bindJumpButtons() {
 async function renderInformationHub() {
   const posts = await api('/hub/posts');
   const isAdmin = state.user.role === 'admin';
+  const isStudent = state.user.role === 'student';
   setContent(`
-    ${pageHeader('Information Hub', 'Activities, announcements, and resolutions for transparent student services.')}
+    ${pageHeader(
+      isStudent ? 'Home' : 'Information Hub',
+      isStudent
+        ? 'Latest campus announcements, activities, events, and resolutions.'
+        : 'Activities, announcements, and resolutions for transparent student services.',
+    )}
     ${isAdmin ? hubPostFormHtml(state.editingPost) : ''}
-    <div class="toolbar">${searchBox('Search posts, resolutions, announcements')}</div>
+    <div class="toolbar">${searchBox(isStudent ? 'Search campus updates' : 'Search posts, resolutions, announcements')}</div>
     <div class="hub-feed">${posts.map(hubPostCard).join('') || '<p class="muted">No information posts yet.</p>'}</div>
   `);
   if (isAdmin) bindHubPostForm(posts);
