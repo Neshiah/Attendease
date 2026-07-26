@@ -1399,11 +1399,24 @@ async function renderProfile() {
 
 async function renderStudents() {
   const rows = await api('/students');
+  const activeStudents = rows.filter((row) => row.status === 'active').length;
   setContent(`
-    ${pageHeader('Manage Students', 'Create and review student accounts.', '<button id="showRegistrationQr">Show Registration QR</button>')}
+    ${pageHeader(
+      'Manage Students',
+      `${rows.length} student accounts, ${activeStudents} active.`,
+      '<button id="showRegistrationQr">Registration QR</button>',
+    )}
     <div id="registrationQrPanel"></div>
-    ${state.user.role === 'admin' ? studentFormHtml(state.editingStudent) : ''}
-    <div class="toolbar"><h2>Students</h2>${searchBox('Search name, student ID, course, section')}</div>
+    ${state.user.role === 'admin' ? `
+      <details class="management-form" ${state.editingStudent ? 'open' : ''}>
+        <summary>
+          <span>${state.editingStudent ? 'Editing student account' : 'Add a student account'}</span>
+          <small>${state.editingStudent ? 'Update the selected student details below.' : 'Open the form to register a student manually.'}</small>
+        </summary>
+        ${studentFormHtml(state.editingStudent)}
+      </details>
+    ` : ''}
+    <div class="toolbar"><h2>Student directory <span class="record-count">${rows.length}</span></h2>${searchBox('Search name, student ID, course, section')}</div>
     <div class="card-list directory-list" data-paginate="true" data-page-size="6">
       ${rows.map((row) => `
         <article class="record directory-card student-record" data-search-row="${searchable(`${row.name} ${row.student_no} ${row.course} ${row.section} ${row.email}`)}">
@@ -1502,9 +1515,15 @@ function bindStudentForm(rows) {
     }
   });
   document.querySelectorAll('[data-edit-student]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.editingStudent = rows.find((row) => Number(row.id) === Number(button.dataset.editStudent));
-      renderStudents();
+    button.addEventListener('click', async () => {
+      state.editingStudent = rows.find((row) => String(row.id) === String(button.dataset.editStudent));
+      if (!state.editingStudent) {
+        toast('Unable to find that student record. Refresh and try again.');
+        return;
+      }
+      await renderStudents();
+      document.querySelector('.management-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('#studentForm input[name="name"]')?.focus({ preventScroll: true });
     });
   });
   document.querySelectorAll('[data-delete-student]').forEach((button) => {
@@ -2234,10 +2253,17 @@ function bindReportExports(groups) {
 async function renderUsers() {
   const allRows = await api('/users');
   const rows = allRows.filter((row) => row.role !== 'student');
+  const activeUsers = rows.filter((row) => row.status === 'active').length;
   setContent(`
-    ${pageHeader('User Management', 'Create and review staff accounts.')}
-    ${userFormHtml(state.editingUser)}
-    <div class="toolbar"><h2>Staff accounts</h2>${searchBox('Search name, email, role, or status')}</div>
+    ${pageHeader('User Management', `${rows.length} staff accounts, ${activeUsers} active.`)}
+    <details class="management-form" ${state.editingUser ? 'open' : ''}>
+      <summary>
+        <span>${state.editingUser ? 'Editing staff account' : 'Add a staff account'}</span>
+        <small>${state.editingUser ? 'Update access, role, and account status.' : 'Create an admin, organizer, faculty, or printing staff login.'}</small>
+      </summary>
+      ${userFormHtml(state.editingUser)}
+    </details>
+    <div class="toolbar"><h2>Staff directory <span class="record-count">${rows.length}</span></h2>${searchBox('Search name, email, role, or status')}</div>
     <div class="card-list directory-list" data-paginate="true" data-page-size="6">${rows.map((row) => `
       <article class="record directory-card user-record" data-search-row="${searchable(`${row.name} ${row.email} ${row.role} ${row.status}`)}">
         <div class="directory-avatar staff" aria-hidden="true">${esc(personInitials(row.name))}</div>
@@ -2246,13 +2272,13 @@ async function renderUsers() {
           <p class="directory-email">${esc(row.email)}</p>
           <div class="directory-meta">
             <span><small>Access role</small>${esc(row.role.replace(/_/g, ' '))}</span>
-            <span><small>Account</small>${row.id === state.user.id ? 'Current user' : 'Staff user'}</span>
+            <span><small>Account</small>${String(row.id) === String(state.user.id) ? 'Current user' : 'Staff user'}</span>
           </div>
         </div>
         <div class="actions directory-actions">
           ${badge(row.status)}
           <button class="secondary" data-edit-user="${row.id}">Edit</button>
-          ${row.id !== state.user.id ? `<button class="danger" data-delete-user="${row.id}">Deactivate</button>` : ''}
+          ${String(row.id) !== String(state.user.id) ? `<button class="danger" data-delete-user="${row.id}">Deactivate</button>` : ''}
         </div>
       </article>
     `).join('') || emptyState('No staff accounts found.', 'Create an admin, organizer, or printing staff account above.')}</div>
@@ -2322,9 +2348,15 @@ function bindUserForm(rows) {
     renderUsers();
   });
   document.querySelectorAll('[data-edit-user]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.editingUser = rows.find((row) => Number(row.id) === Number(button.dataset.editUser));
-      renderUsers();
+    button.addEventListener('click', async () => {
+      state.editingUser = rows.find((row) => String(row.id) === String(button.dataset.editUser));
+      if (!state.editingUser) {
+        toast('Unable to find that staff account. Refresh and try again.');
+        return;
+      }
+      await renderUsers();
+      document.querySelector('.management-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('#userForm input[name="name"]')?.focus({ preventScroll: true });
     });
   });
   document.querySelectorAll('[data-delete-user]').forEach((button) => {

@@ -3395,6 +3395,91 @@ form.panel h2::before {
   gap: 12px;
 }
 
+.management-form {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  margin-bottom: 16px;
+  overflow: hidden;
+  scroll-margin-top: 138px;
+}
+
+.management-form > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  list-style: none;
+  min-height: 70px;
+  padding: 14px 54px 14px 18px;
+  position: relative;
+}
+
+.management-form > summary::-webkit-details-marker {
+  display: none;
+}
+
+.management-form > summary::after {
+  align-items: center;
+  background: var(--primary-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line));
+  border-radius: 10px;
+  color: var(--primary-dark);
+  content: "+";
+  display: flex;
+  font-size: 20px;
+  font-weight: 700;
+  height: 32px;
+  justify-content: center;
+  position: absolute;
+  right: 16px;
+  top: 18px;
+  width: 32px;
+}
+
+.management-form[open] > summary::after {
+  content: "-";
+}
+
+.management-form > summary:hover {
+  background: var(--panel-soft);
+}
+
+.management-form > summary span {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.management-form > summary small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.management-form > .panel {
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line);
+  box-shadow: none;
+  margin: 0;
+}
+
+.record-count {
+  align-items: center;
+  background: var(--primary-soft);
+  border-radius: 999px;
+  color: var(--primary-dark);
+  display: inline-flex;
+  font-size: 11px;
+  height: 25px;
+  justify-content: center;
+  margin-left: 5px;
+  min-width: 25px;
+  padding: 0 7px;
+  vertical-align: middle;
+}
+
 .directory-card {
   align-items: center;
   display: grid;
@@ -3908,6 +3993,10 @@ html[data-theme="dark"] .logo-img {
   .directory-card {
     grid-template-columns: auto minmax(0, 1fr);
     padding: 16px;
+  }
+
+  .management-form {
+    scroll-margin-top: 124px;
   }
 
   .directory-actions {
