@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { db, FieldValue } = require('../config/firestore');
 const { authenticate, authorize } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
+const { sendVerificationEmail } = require('../utils/emailService');
 const {
   validate,
   idParam,
@@ -21,6 +22,7 @@ const {
   pointsAdjustSchema,
   redeemSchema,
   emailCodeSchema,
+  registrationEmailSchema,
   verifyEmailCodeSchema,
   selfRegisterSchema,
   passwordResetSchema,
@@ -247,26 +249,11 @@ async function verifyEmailCode(email, code, purpose, markUsed = true) {
 }
 
 async function sendEmailCode(email, code, purpose) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return false;
-  let nodemailer;
-  try {
-    nodemailer = require('nodemailer');
-  } catch (error) {
-    return false;
-  }
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+  return sendVerificationEmail({
     to: normalizeEmail(email),
-    subject: purpose === 'password_reset' ? 'Password reset code' : 'Student registration verification code',
-    text: `Your verification code is ${code}. It expires in 15 minutes.`,
+    code,
+    purpose,
   });
-  return true;
 }
 
 function safeFile(payload) {
@@ -298,7 +285,7 @@ router.get('/registration/qr', authenticate, authorize('admin'), asyncHandler(as
   res.json({ url, image });
 }));
 
-router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(async (req, res) => {
+router.post('/registration/send-code', validate(registrationEmailSchema), asyncHandler(async (req, res) => {
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   const email = normalizeEmail(req.body.email);
@@ -306,7 +293,7 @@ router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(a
   if (existingAccount) throw duplicateAccountError('email');
   const code = await createEmailCode(email, 'registration');
   const sent = await sendEmailCode(email, code, 'registration');
-  res.json({ message: sent ? 'Verification code sent to email.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });
+  res.json({ message: sent ? 'Verification code sent to your Gmail.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });
 }));
 
 router.post('/registration/verify-code', validate(verifyEmailCodeSchema), asyncHandler(async (req, res) => {

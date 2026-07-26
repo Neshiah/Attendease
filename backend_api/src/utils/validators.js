@@ -1,5 +1,10 @@
 const { z } = require('zod');
 
+const gmailAddressSchema = z.string()
+  .trim()
+  .email()
+  .refine((email) => email.toLowerCase().endsWith('@gmail.com'), 'Use an active Gmail address.');
+
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 const studentIdParam = z.object({ student_id: z.coerce.number().int().positive() });
 const eventIdParam = z.object({ event_id: z.coerce.number().int().positive() });
@@ -11,7 +16,7 @@ const loginSchema = z.object({
 
 const studentSchema = z.object({
   name: z.string().min(2),
-  email: z.string().email(),
+  email: gmailAddressSchema,
   password: z.string().min(6).optional(),
   student_no: z.string().min(3),
   course: z.string().min(1),
@@ -80,6 +85,10 @@ const redeemSchema = z.object({
 
 const emailCodeSchema = z.object({
   email: z.string().email(),
+});
+
+const registrationEmailSchema = z.object({
+  email: gmailAddressSchema,
 });
 
 const verifyEmailCodeSchema = z.object({
@@ -169,6 +178,7 @@ module.exports = {
   pointsAdjustSchema,
   redeemSchema,
   emailCodeSchema,
+  registrationEmailSchema,
   verifyEmailCodeSchema,
   selfRegisterSchema,
   passwordResetSchema,
