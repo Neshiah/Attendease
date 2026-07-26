@@ -302,6 +302,8 @@ router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(a
   const settings = await getSystemSettings();
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   const email = normalizeEmail(req.body.email);
+  const existingAccount = (await listDocs('users')).some((user) => normalizeEmail(user.email) === email);
+  if (existingAccount) throw duplicateAccountError('email');
   const code = await createEmailCode(email, 'registration');
   const sent = await sendEmailCode(email, code, 'registration');
   res.json({ message: sent ? 'Verification code sent to email.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });

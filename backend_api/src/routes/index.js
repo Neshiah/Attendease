@@ -408,6 +408,11 @@ router.post('/registration/send-code', validate(emailCodeSchema), asyncHandler(a
   if (!settings.registration_enabled) return res.status(403).json({ message: 'Student registration is currently closed.' });
   await ensureRegistrationTables();
   const email = normalizeEmail(req.body.email);
+  const [[existingAccount]] = await pool.query(
+    'SELECT id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1',
+    [email],
+  );
+  if (existingAccount) throw duplicateAccountError('email');
   const code = await createEmailCode(email, 'registration');
   const sent = await sendEmailCode(email, code, 'registration');
   res.json({ message: sent ? 'Verification code sent to email.' : 'Verification code generated for local testing.', sent, dev_code: sent ? undefined : code });
