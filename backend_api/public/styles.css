@@ -3962,15 +3962,12 @@ html[data-theme="dark"] .logo-img {
   }
 
   .profile-pill {
-    max-width: 132px;
-    padding-right: 7px;
+    max-width: 46px;
+    padding: 5px;
+    width: 46px;
   }
 
   .profile-copy {
-    max-width: 62px;
-  }
-
-  .profile-copy small {
     display: none;
   }
 
