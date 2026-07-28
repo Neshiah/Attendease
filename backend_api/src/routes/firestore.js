@@ -56,6 +56,13 @@ function dateTime(date, time) {
   return new Date(`${String(date).slice(0, 10)}T${String(time || '00:00').slice(0, 5)}:00+08:00`);
 }
 
+function formatTime12(value) {
+  const [hoursText, minutes = '00'] = String(value || '').slice(0, 5).split(':');
+  const hours = Number(hoursText);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) return String(value || '');
+  return `${hours % 12 || 12}:${minutes} ${hours >= 12 ? 'PM' : 'AM'}`;
+}
+
 function eventStatus(event) {
   if (event.status === 'cancelled') return 'cancelled';
   const current = new Date();
@@ -635,7 +642,16 @@ router.post('/events', authenticate, authorize('admin', 'organizer'), validate(e
     created_by: req.user.id,
     created_at: now(),
   });
-  res.status(201).json({ message: 'Event created.', id });
+  const scheduleMessage = `${req.body.title} is scheduled for ${req.body.event_date} at ${formatTime12(req.body.start_time)} in ${req.body.venue}.`;
+  const students = await listDocs('users', (user) => user.role === 'student' && user.status === 'active');
+  await Promise.all(students.map((student) => (
+    addNotification(student.id, 'New activity scheduled', scheduleMessage)
+  )));
+  res.status(201).json({
+    message: 'Event created and active students notified.',
+    id,
+    students_notified: students.length,
+  });
 }));
 
 router.get('/events/:id', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -710,7 +726,39 @@ router.post('/attendance/scan', authenticate, authorize('student'), validate(att
   const existing = await listDocs('attendance', (row) => Number(row.student_id) === Number(req.user.student_id) && Number(row.event_id) === Number(eventId));
   if (existing.length) return res.status(409).json({ message: 'Attendance already recorded for this event.' });
   await createDoc('attendance', { student_id: req.user.student_id, event_id: Number(eventId), time_in: now(), status: 'attended' });
-  res.status(201).json({ message: 'Attendance confirmed.', event_id: Number(eventId) });
+  const alreadyAwarded = await listDocs('point_transactions', (row) => (
+    Number(row.student_id) === Number(req.user.student_id)
+    && Number(row.event_id) === Number(eventId)
+    && row.type === 'earned'
+  ));
+  let pointsAwarded = 0;
+  if (!alreadyAwarded.length && Number(event.points || 0) > 0) {
+    pointsAwarded = Number(event.points);
+    await db.collection('students').doc(String(req.user.student_id)).set({
+      total_points: FieldValue.increment(pointsAwarded),
+    }, { merge: true });
+    await createDoc('point_transactions', {
+      student_id: req.user.student_id,
+      event_id: Number(eventId),
+      type: 'earned',
+      points: pointsAwarded,
+      description: `Earned from attendance at ${event.title}`,
+      created_at: now(),
+    });
+    const student = await getStudent(req.user.student_id);
+    await addNotification(
+      student.user_id,
+      'Attendance points awarded',
+      `You earned ${pointsAwarded} points after scanning the QR code for ${event.title}.`,
+    );
+  }
+  res.status(201).json({
+    message: pointsAwarded > 0
+      ? `Attendance confirmed. ${pointsAwarded} points were added to your wallet.`
+      : 'Attendance confirmed.',
+    event_id: Number(eventId),
+    points_awarded: pointsAwarded,
+  });
 }));
 
 router.get('/attendance/student/:student_id', authenticate, validate(studentIdParam, 'params'), asyncHandler(async (req, res) => {
@@ -730,17 +778,41 @@ router.get('/attendance/event/:event_id', authenticate, authorize(...staffRoles)
 }));
 
 router.post('/feedback', authenticate, authorize('student'), validate(feedbackSchema), asyncHandler(async (req, res) => {
+  req.body.student_id = req.user.student_id;
   const attended = await listDocs('attendance', (row) => Number(row.student_id) === Number(req.body.student_id) && Number(row.event_id) === Number(req.body.event_id));
   if (!attended.length) return res.status(400).json({ message: 'Attendance must be recorded before feedback.' });
   const existing = await listDocs('feedback', (row) => Number(row.student_id) === Number(req.body.student_id) && Number(row.event_id) === Number(req.body.event_id));
   if (existing.length) return res.status(409).json({ message: 'Feedback already submitted for this event.' });
   await createDoc('feedback', { ...req.body, submitted_at: now() });
   const event = await getDoc('events', req.body.event_id);
-  await db.collection('students').doc(String(req.body.student_id)).set({ total_points: FieldValue.increment(Number(event?.points || 0)) }, { merge: true });
-  await createDoc('point_transactions', { student_id: req.body.student_id, event_id: req.body.event_id, type: 'earned', points: Number(event?.points || 0), description: `Earned from feedback for ${event?.title || 'event'}`, created_at: now() });
-  const student = await getStudent(req.body.student_id);
-  await addNotification(student.user_id, 'Points awarded', `You earned ${Number(event?.points || 0)} points for completing feedback.`);
-  res.status(201).json({ message: 'Feedback submitted and points awarded.' });
+  const alreadyAwarded = await listDocs('point_transactions', (row) => (
+    Number(row.student_id) === Number(req.body.student_id)
+    && Number(row.event_id) === Number(req.body.event_id)
+    && row.type === 'earned'
+  ));
+  let pointsAwarded = 0;
+  if (!alreadyAwarded.length && Number(event?.points || 0) > 0) {
+    pointsAwarded = Number(event.points);
+    await db.collection('students').doc(String(req.body.student_id)).set({
+      total_points: FieldValue.increment(pointsAwarded),
+    }, { merge: true });
+    await createDoc('point_transactions', {
+      student_id: req.body.student_id,
+      event_id: req.body.event_id,
+      type: 'earned',
+      points: pointsAwarded,
+      description: `Legacy attendance reward for ${event.title}`,
+      created_at: now(),
+    });
+    const student = await getStudent(req.body.student_id);
+    await addNotification(student.user_id, 'Points awarded', `You earned ${pointsAwarded} points for your event attendance.`);
+  }
+  res.status(201).json({
+    message: pointsAwarded > 0
+      ? 'Feedback submitted. Missing attendance points were restored.'
+      : 'Feedback submitted. Your attendance points were already awarded.',
+    points_awarded: pointsAwarded,
+  });
 }));
 
 router.get('/feedback/event/:event_id', authenticate, authorize(...staffRoles), validate(eventIdParam, 'params'), asyncHandler(async (req, res) => {

@@ -1047,6 +1047,9 @@ function renderShell() {
     <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
         <div class="topbar-brand">
+          <button class="nav-toggle secondary" id="navToggle" type="button" aria-label="Open menu" aria-expanded="false" title="Open menu">
+            <span></span><span></span><span></span>
+          </button>
           <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
         </div>
         <div class="topbar-actions">
@@ -2375,8 +2378,11 @@ async function renderQr() {
     button.addEventListener('click', async () => {
       try {
         const data = await api(`/events/${button.dataset.qr}/qr`);
-        document.querySelector(`#qr-${button.dataset.qr}`).innerHTML = `
-          <img class="qr" src="${data.image}" alt="Event QR" />
+        const output = document.querySelector(`#qr-${button.dataset.qr}`);
+        output.innerHTML = `
+          <section class="qr-output">
+          <h3>${esc(data.title)}</h3>
+          <img class="qr" src="${data.image}" alt="Event QR for ${esc(data.title)}" />
           <p class="hint">Expires exactly at event end time: ${esc(formatDateTime(data.expires_at))}</p>
           ${data.attendance_code ? `
             <p class="hint">Attendance code for manual entry (admin only):</p>
@@ -2384,7 +2390,17 @@ async function renderQr() {
           ` : '<p class="hint">Manual attendance code is visible to admin only.</p>'}
           <p class="hint">For web testing, copy this QR payload:</p>
           <textarea readonly>${JSON.stringify({ event_id: data.event_id, qr_code: data.qr_code })}</textarea>
+          <div class="actions qr-actions">
+            <button type="button" class="secondary" data-print-qr>Print QR Code</button>
+          </div>
+          </section>
         `;
+        output.querySelector('[data-print-qr]').addEventListener('click', () => {
+          const printTarget = output.querySelector('.qr-output');
+          printTarget.classList.add('print-target');
+          window.print();
+          printTarget.classList.remove('print-target');
+        });
       } catch (error) {
         toast(error.message);
       }
@@ -2440,7 +2456,7 @@ function renderScan() {
 }
 
 async function submitAttendancePayload(payload) {
-  await api('/attendance/scan', {
+  const result = await api('/attendance/scan', {
     method: 'POST',
     body: JSON.stringify({
       student_id: state.user.student_id,
@@ -2450,7 +2466,8 @@ async function submitAttendancePayload(payload) {
       }),
     }),
   });
-  toast('Attendance confirmed.');
+  await hydrateStudentTopPoints();
+  toast(result.message || 'Attendance confirmed.');
 }
 
 function loadScriptOnce(url, globalName) {
@@ -2603,8 +2620,8 @@ async function renderFeedbackForm() {
       const data = formData(event.currentTarget);
       ['event_id', 'q1', 'q2', 'q3', 'q4', 'q5'].forEach((key) => data[key] = Number(data[key]));
       data.student_id = state.user.student_id;
-      await api('/feedback', { method: 'POST', body: JSON.stringify(data) });
-      toast('Feedback submitted. Points awarded.');
+      const result = await api('/feedback', { method: 'POST', body: JSON.stringify(data) });
+      toast(result.message || 'Feedback submitted.');
     } catch (error) {
       toast(error.message);
     }

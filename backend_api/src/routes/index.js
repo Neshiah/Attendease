@@ -49,6 +49,13 @@ const eventStatusSql = `
   END
 `;
 
+function formatTime12(value) {
+  const [hoursText, minutes = '00'] = String(value || '').slice(0, 5).split(':');
+  const hours = Number(hoursText);
+  if (!Number.isInteger(hours) || hours < 0 || hours > 23) return String(value || '');
+  return `${hours % 12 || 12}:${minutes} ${hours >= 12 ? 'PM' : 'AM'}`;
+}
+
 async function getStudentBalance(connection, studentId) {
   const [[student]] = await connection.query('SELECT total_points FROM students WHERE id = ?', [studentId]);
   return student ? Number(student.total_points) : null;
@@ -815,12 +822,36 @@ router.get('/events', authenticate, asyncHandler(async (req, res) => {
 
 router.post('/events', authenticate, authorize('admin', 'organizer'), validate(eventSchema), asyncHandler(async (req, res) => {
   const qrCode = crypto.randomBytes(24).toString('hex');
-  const [result] = await pool.query(
-    `INSERT INTO events (title, description, event_date, start_time, end_time, venue, event_type, points, status, qr_code, created_by, organizer_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [req.body.title, req.body.description || null, req.body.event_date, req.body.start_time, req.body.end_time, req.body.venue, req.body.event_type, req.body.points, 'upcoming', qrCode, req.user.id, req.body.organizer_id || null],
-  );
-  res.status(201).json({ message: 'Event created.', id: result.insertId, qr_code: qrCode });
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [result] = await connection.query(
+      `INSERT INTO events (title, description, event_date, start_time, end_time, venue, event_type, points, status, qr_code, created_by, organizer_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.body.title, req.body.description || null, req.body.event_date, req.body.start_time, req.body.end_time, req.body.venue, req.body.event_type, req.body.points, 'upcoming', qrCode, req.user.id, req.body.organizer_id || null],
+    );
+    const scheduleMessage = `${req.body.title} is scheduled for ${req.body.event_date} at ${formatTime12(req.body.start_time)} in ${req.body.venue}.`;
+    const [notificationResult] = await connection.query(
+      `INSERT INTO notifications (user_id, title, message)
+       SELECT u.id, ?, ?
+       FROM users u
+       JOIN students s ON s.user_id = u.id
+       WHERE u.role = 'student' AND u.status = 'active'`,
+      ['New activity scheduled', scheduleMessage],
+    );
+    await connection.commit();
+    res.status(201).json({
+      message: 'Event created and active students notified.',
+      id: result.insertId,
+      qr_code: qrCode,
+      students_notified: notificationResult.affectedRows,
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }));
 
 router.get('/events/:id', authenticate, validate(idParam, 'params'), asyncHandler(async (req, res) => {
@@ -912,19 +943,76 @@ router.post('/attendance/scan', authenticate, authorize('student'), validate(att
   if (!eventId || !qrCode) {
     return res.status(422).json({ message: 'QR payload or attendance code is required.' });
   }
-  const [[event]] = await pool.query(
-    `SELECT * FROM events
-     WHERE id = ? AND qr_code = ? AND status <> 'cancelled'
-       AND NOW() >= TIMESTAMP(event_date, start_time) AND NOW() < TIMESTAMP(event_date, end_time)`,
-    [eventId, qrCode],
-  );
-  if (!event) return res.status(400).json({ message: 'QR code is invalid, expired, or attendance time is closed.' });
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[event]] = await connection.query(
+      `SELECT * FROM events
+       WHERE id = ? AND qr_code = ? AND status <> 'cancelled'
+         AND NOW() >= TIMESTAMP(event_date, start_time) AND NOW() < TIMESTAMP(event_date, end_time)
+       FOR UPDATE`,
+      [eventId, qrCode],
+    );
+    if (!event) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'QR code is invalid, expired, or attendance time is closed.' });
+    }
 
-  const [[existing]] = await pool.query('SELECT id FROM attendance WHERE student_id = ? AND event_id = ?', [req.body.student_id, eventId]);
-  if (existing) return res.status(409).json({ message: 'Attendance already recorded for this event.' });
+    const [[existing]] = await connection.query(
+      'SELECT id FROM attendance WHERE student_id = ? AND event_id = ?',
+      [req.body.student_id, eventId],
+    );
+    if (existing) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'Attendance already recorded for this event.' });
+    }
 
-  await pool.query('INSERT INTO attendance (student_id, event_id, time_in, status) VALUES (?, ?, NOW(), ?)', [req.body.student_id, eventId, 'attended']);
-  res.status(201).json({ message: 'Attendance confirmed.', event_id: eventId });
+    await connection.query(
+      'INSERT INTO attendance (student_id, event_id, time_in, status) VALUES (?, ?, NOW(), ?)',
+      [req.body.student_id, eventId, 'attended'],
+    );
+
+    let pointsAwarded = 0;
+    const [[alreadyAwarded]] = await connection.query(
+      "SELECT id FROM point_transactions WHERE student_id = ? AND event_id = ? AND type = 'earned'",
+      [req.body.student_id, eventId],
+    );
+    if (!alreadyAwarded && Number(event.points) > 0) {
+      pointsAwarded = Number(event.points);
+      await connection.query(
+        'UPDATE students SET total_points = total_points + ? WHERE id = ?',
+        [pointsAwarded, req.body.student_id],
+      );
+      await connection.query(
+        'INSERT INTO point_transactions (student_id, event_id, type, points, description, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+        [req.body.student_id, eventId, 'earned', pointsAwarded, `Earned from attendance at ${event.title}`],
+      );
+      const [[student]] = await connection.query(
+        'SELECT user_id FROM students WHERE id = ?',
+        [req.body.student_id],
+      );
+      await addNotification(
+        connection,
+        student.user_id,
+        'Attendance points awarded',
+        `You earned ${pointsAwarded} points after scanning the QR code for ${event.title}.`,
+      );
+    }
+
+    await connection.commit();
+    res.status(201).json({
+      message: pointsAwarded > 0
+        ? `Attendance confirmed. ${pointsAwarded} points were added to your wallet.`
+        : 'Attendance confirmed.',
+      event_id: eventId,
+      points_awarded: pointsAwarded,
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }));
 
 router.get('/attendance/student/:student_id', authenticate, validate(studentIdParam, 'params'), asyncHandler(async (req, res) => {
@@ -944,6 +1032,7 @@ router.get('/attendance/event/:event_id', authenticate, authorize(...staffRoles)
 }));
 
 router.post('/feedback', authenticate, authorize('student'), validate(feedbackSchema), asyncHandler(async (req, res) => {
+  req.body.student_id = req.user.student_id;
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -968,18 +1057,25 @@ router.post('/feedback', authenticate, authorize('student'), validate(feedbackSc
       "SELECT id FROM point_transactions WHERE student_id = ? AND event_id = ? AND type = 'earned'",
       [req.body.student_id, req.body.event_id],
     );
+    let pointsAwarded = 0;
     if (!alreadyAwarded) {
+      pointsAwarded = Number(event.points);
       await connection.query('UPDATE students SET total_points = total_points + ? WHERE id = ?', [event.points, req.body.student_id]);
       await connection.query(
         'INSERT INTO point_transactions (student_id, event_id, type, points, description, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-        [req.body.student_id, req.body.event_id, 'earned', event.points, `Earned from feedback for ${event.title}`],
+        [req.body.student_id, req.body.event_id, 'earned', event.points, `Legacy attendance reward for ${event.title}`],
       );
       const [[student]] = await connection.query('SELECT user_id FROM students WHERE id = ?', [req.body.student_id]);
-      await addNotification(connection, student.user_id, 'Points awarded', `You earned ${event.points} points for completing feedback.`);
+      await addNotification(connection, student.user_id, 'Points awarded', `You earned ${event.points} points for your event attendance.`);
     }
 
     await connection.commit();
-    res.status(201).json({ message: 'Feedback submitted and points awarded.' });
+    res.status(201).json({
+      message: pointsAwarded > 0
+        ? 'Feedback submitted. Missing attendance points were restored.'
+        : 'Feedback submitted. Your attendance points were already awarded.',
+      points_awarded: pointsAwarded,
+    });
   } catch (error) {
     await connection.rollback();
     throw error;

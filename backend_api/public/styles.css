@@ -5533,3 +5533,125 @@ body {
     display: none !important;
   }
 }
+
+/* Compact mobile menu replaces the crowded bottom navigation rail. */
+@media (max-width: 767px) {
+  .nav-toggle {
+    display: flex !important;
+  }
+
+  .sidebar,
+  .app-shell .sidebar,
+  .app-shell:not(.menu-open) .sidebar,
+  .student-app-shell .sidebar,
+  .student-app-shell:not(.menu-open) .sidebar {
+    align-items: stretch;
+    background: var(--panel);
+    border: 0;
+    border-radius: 0 20px 20px 0;
+    bottom: auto;
+    box-shadow: 20px 0 50px rgba(7, 15, 26, .24);
+    display: grid !important;
+    gap: 5px;
+    height: 100dvh;
+    left: 0;
+    max-height: none;
+    max-width: 286px;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 78px 12px 24px;
+    position: fixed;
+    right: auto;
+    top: 0;
+    transform: translateX(-104%) !important;
+    width: min(286px, 86vw);
+    z-index: 35;
+  }
+
+  .app-shell.nav-open .sidebar {
+    transform: translateX(0) !important;
+  }
+
+  .sidebar::before {
+    display: block;
+  }
+
+  .app-shell .nav-btn {
+    align-items: center;
+    flex: initial;
+    flex-direction: row;
+    font-size: 13px;
+    gap: 11px;
+    justify-content: flex-start;
+    min-height: 45px;
+    min-width: 0;
+    padding: 8px 10px;
+    width: 100%;
+  }
+
+  .app-shell .nav-btn span:last-child {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .app-shell .nav-icon {
+    height: 28px;
+    width: 28px;
+  }
+
+  .content {
+    padding-bottom: 32px;
+  }
+
+  .nav-scrim:not(.hidden) {
+    display: block !important;
+  }
+}
+
+.qr-output {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-top: 14px;
+}
+
+.qr-output h3,
+.qr-output p {
+  margin: 0;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .qr-output.print-target,
+  .qr-output.print-target * {
+    visibility: visible !important;
+  }
+
+  .qr-output.print-target {
+    align-content: start;
+    background: #fff;
+    color: #111;
+    inset: 0;
+    justify-items: center;
+    padding: 24mm;
+    position: absolute;
+    text-align: center;
+  }
+
+  .qr-output.print-target .qr {
+    height: 95mm;
+    width: 95mm;
+  }
+
+  .qr-output.print-target textarea,
+  .qr-output.print-target .qr-actions,
+  .qr-output.print-target p:last-of-type {
+    display: none !important;
+  }
+}
