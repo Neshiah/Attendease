@@ -984,9 +984,32 @@ router.delete('/notifications/:id', authenticate, validate(idParam, 'params'), a
 }));
 
 router.get('/reports/attendance', authenticate, authorize('admin', 'organizer'), asyncHandler(async (req, res) => {
-  const events = await listDocs('events');
   const attendance = await listDocs('attendance');
-  res.json(events.map((event) => ({ event_id: event.id, title: event.title, event_date: event.event_date, attendees: attendance.filter((row) => Number(row.event_id) === Number(event.id)).length })));
+  const rows = await Promise.all(attendance.map(async (row) => {
+    const [event, studentRecord] = await Promise.all([
+      getDoc('events', row.event_id),
+      getStudent(row.student_id),
+    ]);
+    const student = studentRecord ? await studentWithUser(studentRecord) : null;
+    return {
+      attendance_id: row.id,
+      student_id: row.student_id,
+      event_id: row.event_id,
+      time_in: row.time_in,
+      time_out: row.time_out || null,
+      status: row.status || 'attended',
+      student_no: student?.student_no || '',
+      student_name: student?.name || 'Student account unavailable',
+      course: student?.course || '',
+      year_level: student?.year_level || '',
+      section: student?.section || '',
+      event_title: event?.title || 'Event unavailable',
+      event_date: event?.event_date || '',
+    };
+  }));
+  rows.sort((a, b) => String(b.time_in || '').localeCompare(String(a.time_in || ''))
+    || String(a.student_name).localeCompare(String(b.student_name)));
+  res.json(rows);
 }));
 
 router.get('/reports/feedback', authenticate, authorize('admin', 'organizer'), asyncHandler(async (req, res) => {

@@ -416,6 +416,26 @@ function sortableDate(row) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function parseDisplayDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateOnly(value) {
+  const date = parseDisplayDate(value);
+  return date
+    ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium' }).format(date)
+    : (value || 'Date unavailable');
+}
+
+function formatDateTime(value) {
+  const date = parseDisplayDate(value);
+  return date
+    ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    : (value || 'Time unavailable');
+}
+
 function searchable(text) {
   return esc(String(text ?? '').toLowerCase());
 }
@@ -1270,7 +1290,7 @@ async function renderDashboard() {
   setContent(`
     ${pageHeader('Operations Dashboard', 'Monitor participation, feedback, points, and printing redemptions.')}
     <div class="grid three">
-      ${metricCard('Events Tracked', attendance.length, 'Attendance report rows', 'teal')}
+      ${metricCard('Attendance Records', attendance.length, 'Students checked in', 'teal')}
       ${metricCard('Feedback Sets', feedback.length, 'Feedback summary rows', 'blue')}
       ${metricCard('Printing Statuses', printing.length, 'Request status groups', 'gold')}
     </div>
@@ -2709,9 +2729,68 @@ function notificationCard(row) {
 
 async function renderAttendanceReport() {
   const rows = await api('/reports/attendance');
-  setContent(`${pageHeader('Attendance Records', 'Event participation summaries.')}<div class="toolbar">${searchBox('Search attendance')}<button class="secondary" data-export-csv>Export CSV</button></div><div class="card-list">${rows.map(reportCard).join('')}</div>`);
+  const uniqueStudents = new Set(rows.map((row) => String(row.student_id))).size;
+  const uniqueEvents = new Set(rows.map((row) => String(row.event_id))).size;
+  setContent(`
+    ${pageHeader('Attendance Records', 'Complete student attendance by event and check-in time.')}
+    <div class="grid three attendance-summary">
+      ${metricCard('Attendance Records', rows.length, 'Total successful check-ins', 'teal')}
+      ${metricCard('Students Present', uniqueStudents, 'Unique student names', 'blue')}
+      ${metricCard('Events Covered', uniqueEvents, 'Events with attendance', 'gold')}
+    </div>
+    <div class="toolbar attendance-toolbar">
+      <h2>Student attendance <span class="record-count">${rows.length}</span></h2>
+      ${searchBox('Search student name, ID, event, or section')}
+      <button class="secondary" data-export-csv>Export CSV</button>
+    </div>
+    <div class="card-list attendance-list">
+      ${rows.map(attendanceRecordCard).join('') || emptyState('No attendance records yet.', 'Student names will appear here after they scan an event QR code.')}
+    </div>
+  `);
   bindCsvExport(rows, 'attendance-report.csv');
   bindSearch();
+}
+
+function attendanceRecordCard(row) {
+  const studentName = row.student_name || row.name || 'Student name unavailable';
+  const classDetails = [
+    row.course,
+    row.year_level ? `Year ${row.year_level}` : '',
+    row.section ? `Section ${row.section}` : '',
+  ].filter(Boolean).join(' - ');
+  const searchableValues = [
+    studentName,
+    row.student_no,
+    row.course,
+    row.year_level,
+    row.section,
+    row.event_title,
+    row.event_date,
+    row.time_in,
+    row.status,
+  ].join(' ');
+  return `
+    <article class="record attendance-record" data-search-row="${searchable(searchableValues)}" data-sort-date="${esc(row.time_in || row.event_date || '')}">
+      <div class="attendance-student">
+        <div class="directory-avatar attendance-avatar" aria-hidden="true">${esc(personInitials(studentName))}</div>
+        <div class="attendance-identity">
+          <h3>${esc(studentName)}</h3>
+          <p>${esc(row.student_no || 'No student ID')}</p>
+          ${classDetails ? `<small>${esc(classDetails)}</small>` : ''}
+        </div>
+      </div>
+      <div class="attendance-event">
+        <small>Event</small>
+        <strong>${esc(row.event_title || row.title || 'Event unavailable')}</strong>
+        <span>${esc(formatDateOnly(row.event_date))}</span>
+      </div>
+      <div class="attendance-checkin">
+        ${badge(row.status || 'attended')}
+        <small>Checked in</small>
+        <strong>${esc(formatDateTime(row.time_in))}</strong>
+      </div>
+    </article>
+  `;
 }
 
 async function renderFeedbackReport() {
@@ -3112,8 +3191,9 @@ function bindSettingsForm() {
 
 function displayReportEntries(row) {
   return Object.entries(row).filter(([key]) => {
-    if (key === 'id' || key === 'user_id') return false;
-    if ((key === 'student_id' || key === 'event_id') && (row.student_no || row.title || row.event_title || row.name)) return false;
+    if (key === 'id' || key === 'user_id' || key === 'attendance_id') return false;
+    if ((key === 'student_id' || key === 'event_id')
+      && (row.student_no || row.title || row.event_title || row.name || row.student_name)) return false;
     return true;
   });
 }

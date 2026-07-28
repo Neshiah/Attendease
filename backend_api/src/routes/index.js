@@ -1345,9 +1345,15 @@ router.delete('/notifications/:id', authenticate, validate(idParam, 'params'), a
 
 router.get('/reports/attendance', authenticate, authorize('admin', 'organizer'), asyncHandler(async (req, res) => {
   const [rows] = await pool.query(
-    `SELECT e.id AS event_id, e.title, COUNT(a.id) AS attendees
-     FROM events e LEFT JOIN attendance a ON a.event_id = e.id
-     GROUP BY e.id ORDER BY e.event_date DESC`,
+    `SELECT a.id AS attendance_id, a.student_id, a.event_id, a.time_in, a.time_out, a.status,
+            s.student_no, s.course, s.year_level, s.section,
+            u.name AS student_name,
+            e.title AS event_title, e.event_date
+     FROM attendance a
+     JOIN students s ON s.id = a.student_id
+     JOIN users u ON u.id = s.user_id
+     JOIN events e ON e.id = a.event_id
+     ORDER BY a.time_in DESC, u.name ASC`,
   );
   res.json(rows);
 }));
