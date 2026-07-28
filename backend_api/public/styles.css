@@ -5064,3 +5064,101 @@ button.secondary.is-loading::after {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Narrow-window layout guardrails */
+.page-head > div,
+.toolbar,
+.toolbar > h2,
+.directory-copy {
+  min-width: 0;
+}
+
+.page-head h2,
+.toolbar h2 {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .main-stage {
+    transition: padding-top .24s var(--ease);
+  }
+
+  .profile-dropdown {
+    max-height: calc(100dvh - 84px);
+    min-width: 0;
+    overflow-y: auto;
+    position: fixed;
+    right: 12px;
+    top: 72px;
+    width: min(230px, calc(100vw - 24px));
+  }
+
+  .app-shell.profile-menu-open .main-stage {
+    padding-top: 166px;
+  }
+
+  .page-head {
+    margin-bottom: 18px;
+  }
+
+  .page-head h2 {
+    font-size: clamp(25px, 7vw, 32px);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 900px) {
+  .main-stage {
+    transition: padding-top .24s var(--ease);
+  }
+
+  .app-shell.profile-menu-open .main-stage {
+    padding-top: 150px;
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    gap: 8px;
+  }
+
+  .topbar-brand {
+    gap: 8px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .profile-pill {
+    max-width: 154px;
+  }
+
+  .profile-copy {
+    max-width: 72px;
+  }
+
+  .content {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .directory-card {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 479px) {
+  .profile-dropdown {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+
+  .app-shell.profile-menu-open .main-stage {
+    padding-top: 166px;
+  }
+
+  .directory-actions button:only-of-type {
+    grid-column: 1 / -1;
+  }
+}

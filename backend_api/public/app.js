@@ -1087,6 +1087,7 @@ function navigateToView(view) {
   });
   document.querySelector('#profileDropdown')?.classList.add('hidden');
   document.querySelector('#profileMenuButton')?.setAttribute('aria-expanded', 'false');
+  document.querySelector('.app-shell')?.classList.remove('profile-menu-open');
   renderView();
 }
 
@@ -1097,6 +1098,11 @@ function bindShellControls() {
   const profileButton = document.querySelector('#profileMenuButton');
   const profileDropdown = document.querySelector('#profileDropdown');
 
+  const closeProfileMenu = () => {
+    profileDropdown.classList.add('hidden');
+    profileButton.setAttribute('aria-expanded', 'false');
+    shell.classList.remove('profile-menu-open');
+  };
   const closeNavigation = () => {
     closeShellNavigation();
   };
@@ -1112,24 +1118,24 @@ function bindShellControls() {
   profileButton.addEventListener('click', () => {
     const closed = profileDropdown.classList.toggle('hidden');
     profileButton.setAttribute('aria-expanded', String(!closed));
+    shell.classList.toggle('profile-menu-open', !closed);
   });
   document.querySelectorAll('[data-profile-action]').forEach((button) => {
     button.addEventListener('click', () => {
       const action = button.dataset.profileAction;
       if (action === 'logout') return logout();
+      closeProfileMenu();
       navigateToView(action);
     });
   });
   document.onkeydown = (event) => {
     if (event.key !== 'Escape') return;
     closeNavigation();
-    profileDropdown.classList.add('hidden');
-    profileButton.setAttribute('aria-expanded', 'false');
+    closeProfileMenu();
   };
   document.onclick = (event) => {
     if (event.target.closest('.profile-menu')) return;
-    profileDropdown.classList.add('hidden');
-    profileButton.setAttribute('aria-expanded', 'false');
+    closeProfileMenu();
   };
 }
 
