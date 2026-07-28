@@ -12,6 +12,8 @@ const state = {
 
 const app = document.querySelector('#app');
 document.documentElement.dataset.theme = state.theme;
+let activeRequests = 0;
+let contentAnimationFrame = null;
 const isAdminLoginPage = window.location.pathname.startsWith('/admin-login');
 const isStudentLoginPage = window.location.pathname.startsWith('/student-login') || window.location.pathname === '/';
 const isRegisterPage = window.location.pathname.startsWith('/student-register');
@@ -130,19 +132,82 @@ function logout() {
   window.location.href = wasStudent ? '/' : '/admin-login';
 }
 
+function ensureGlobalProgress() {
+  let progress = document.querySelector('#networkProgress');
+  if (progress) return progress;
+  progress = document.createElement('div');
+  progress.id = 'networkProgress';
+  progress.className = 'network-progress';
+  progress.setAttribute('aria-hidden', 'true');
+  progress.innerHTML = '<span></span>';
+  document.body.appendChild(progress);
+  return progress;
+}
+
+function requestActionButton() {
+  const focused = document.activeElement;
+  const button = focused?.closest?.('button');
+  if (button && !button.matches('.nav-btn, .nav-toggle, .theme-toggle, .auth-theme-toggle, .profile-pill')) {
+    return button;
+  }
+  return focused?.closest?.('form')?.querySelector('button[type="submit"]') || null;
+}
+
+function beginRequest() {
+  activeRequests += 1;
+  ensureGlobalProgress();
+  document.body.classList.remove('network-complete');
+  document.body.classList.add('network-busy');
+  const button = requestActionButton();
+  if (button) {
+    const requestCount = Number(button.dataset.requestCount || 0);
+    if (!requestCount) button.dataset.wasDisabled = String(button.disabled);
+    button.dataset.requestCount = String(requestCount + 1);
+    button.classList.add('is-loading');
+    button.setAttribute('aria-busy', 'true');
+    button.disabled = true;
+  }
+  return button;
+}
+
+function endRequest(button) {
+  activeRequests = Math.max(0, activeRequests - 1);
+  if (button?.isConnected) {
+    const requestCount = Math.max(0, Number(button.dataset.requestCount || 1) - 1);
+    button.dataset.requestCount = String(requestCount);
+    if (!requestCount) {
+      button.classList.remove('is-loading');
+      button.removeAttribute('aria-busy');
+      button.disabled = button.dataset.wasDisabled === 'true';
+      delete button.dataset.requestCount;
+      delete button.dataset.wasDisabled;
+    }
+  }
+  if (!activeRequests) {
+    document.body.classList.remove('network-busy');
+    document.body.classList.add('network-complete');
+    window.setTimeout(() => document.body.classList.remove('network-complete'), 280);
+  }
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(data?.message || 'Request failed.');
-  return data;
+  const actionButton = beginRequest();
+  try {
+    const response = await fetch(`/api${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!response.ok) throw new Error(data?.message || 'Request failed.');
+    return data;
+  } finally {
+    endRequest(actionButton);
+  }
 }
 
 function toast(message) {
@@ -203,9 +268,13 @@ function personInitials(name = 'User') {
     .toUpperCase() || 'U';
 }
 
-function loadingSkeleton() {
+function loadingSkeleton(label = 'Loading your workspace') {
   return `
-    <div class="skeleton-page" role="status" aria-label="Loading page">
+    <div class="skeleton-page" role="status" aria-live="polite" aria-label="${esc(label)}">
+      <div class="skeleton-status">
+        <span class="loading-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>${esc(label)}</span>
+      </div>
       <div class="skeleton skeleton-heading"></div>
       <div class="skeleton-grid">
         <div class="skeleton skeleton-card"></div>
@@ -970,7 +1039,7 @@ function renderShell() {
       </header>
       <div class="layout">
         <nav class="sidebar" id="mainNavigation" aria-label="Main navigation">
-          ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}">${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
+          ${items.map(([key, label]) => `<button class="nav-btn ${state.active === key ? 'active' : ''}" data-view="${key}" ${state.active === key ? 'aria-current="page"' : ''}>${navIcon(key, label)}<span>${esc(label)}</span></button>`).join('')}
         </nav>
         <div class="main-stage">
           <main class="content" id="content" tabindex="-1"></main>
@@ -986,12 +1055,38 @@ function renderShell() {
   bindShellControls();
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.active = button.dataset.view;
-      resetEditing();
-      renderShell();
+      navigateToView(button.dataset.view);
     });
   });
   hydrateStudentTopPoints();
+  renderView();
+}
+
+function closeShellNavigation() {
+  const shell = document.querySelector('.app-shell');
+  const navToggle = document.querySelector('#navToggle');
+  const navScrim = document.querySelector('#navScrim');
+  shell?.classList.remove('nav-open');
+  navToggle?.setAttribute('aria-expanded', 'false');
+  navScrim?.classList.add('hidden');
+}
+
+function navigateToView(view) {
+  if (!view || view === state.active) {
+    closeShellNavigation();
+    return;
+  }
+  state.active = view;
+  resetEditing();
+  closeShellNavigation();
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    const active = button.dataset.view === view;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  document.querySelector('#profileDropdown')?.classList.add('hidden');
+  document.querySelector('#profileMenuButton')?.setAttribute('aria-expanded', 'false');
   renderView();
 }
 
@@ -1003,9 +1098,7 @@ function bindShellControls() {
   const profileDropdown = document.querySelector('#profileDropdown');
 
   const closeNavigation = () => {
-    shell.classList.remove('nav-open');
-    navToggle.setAttribute('aria-expanded', 'false');
-    navScrim.classList.add('hidden');
+    closeShellNavigation();
   };
   navToggle.addEventListener('click', () => {
     const open = shell.classList.toggle('nav-open');
@@ -1024,8 +1117,7 @@ function bindShellControls() {
     button.addEventListener('click', () => {
       const action = button.dataset.profileAction;
       if (action === 'logout') return logout();
-      state.active = action;
-      renderShell();
+      navigateToView(action);
     });
   });
   document.onkeydown = (event) => {
@@ -1053,12 +1145,24 @@ async function hydrateStudentTopPoints() {
   }
 }
 
-function setContent(html) {
-  document.querySelector('#content').innerHTML = html;
+function setContent(html, options = {}) {
+  const content = document.querySelector('#content');
+  if (!content) return;
+  const loading = Boolean(options.loading);
+  content.innerHTML = html;
+  content.classList.remove('is-entering', 'is-loading-view');
+  content.classList.toggle('is-loading-view', loading);
+  content.setAttribute('aria-busy', String(loading));
+  if (loading || options.animate === false) return;
+  if (contentAnimationFrame) cancelAnimationFrame(contentAnimationFrame);
+  contentAnimationFrame = requestAnimationFrame(() => {
+    content.classList.add('is-entering');
+    contentAnimationFrame = null;
+  });
 }
 
 async function renderView() {
-  setContent(loadingSkeleton());
+  setContent(loadingSkeleton(), { loading: true, animate: false });
   try {
     const role = state.user.role;
     if (state.active === 'dashboard') return await renderDashboard();
@@ -1198,8 +1302,7 @@ function emptyState(title, note = '') {
 function bindJumpButtons() {
   document.querySelectorAll('[data-jump]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.active = button.dataset.jump;
-      renderShell();
+      navigateToView(button.dataset.jump);
     });
   });
 }

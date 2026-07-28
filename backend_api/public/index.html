@@ -9,31 +9,20 @@
     <script>
       document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';
     </script>
-    <link rel="stylesheet" href="/styles.css?v=20260726-5" />
+    <link rel="stylesheet" href="/styles.css?v=20260728-1" />
   </head>
   <body>
     <main id="app">
-      <section class="auth-shell">
-        <div class="brand">
-          <div class="brand-mark">AR</div>
-          <h1>Student Attendance Rewards</h1>
-          <p>Attendance, feedback, points, and printing redemption in one web app.</p>
+      <section class="app-boot" role="status" aria-live="polite" aria-label="Loading Attendease">
+        <div class="boot-logo" aria-hidden="true">
+          <span>AR</span>
+          <i></i>
         </div>
-        <form id="loginForm" class="panel">
-          <h2>Login</h2>
-          <label>
-            Student ID or Email
-            <input id="login" autocomplete="username" required />
-          </label>
-          <label>
-            Password
-            <input id="password" type="password" autocomplete="current-password" required />
-          </label>
-          <button type="submit">Sign in</button>
-          <p class="hint">Test admin: admin@test.com / password123</p>
-        </form>
+        <strong>Attendease</strong>
+        <p>Preparing your campus workspace</p>
+        <div class="boot-progress" aria-hidden="true"><span></span></div>
       </section>
     </main>
-    <script src="/app.js?v=20260726-5"></script>
+    <script src="/app.js?v=20260728-1"></script>
   </body>
 </html>
