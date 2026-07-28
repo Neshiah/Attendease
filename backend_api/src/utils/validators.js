@@ -41,13 +41,19 @@ const eventSchema = z.object({
   title: z.string().min(3),
   description: z.string().optional().nullable(),
   event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  start_time: z.string().regex(/^\d{2}:\d{2}/),
-  end_time: z.string().regex(/^\d{2}:\d{2}/),
+  start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
+  end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/),
   venue: z.string().min(1),
   event_type: z.string().min(1),
   points: z.coerce.number().int().nonnegative(),
   organizer_id: z.coerce.number().int().positive().optional().nullable(),
-});
+}).refine(
+  (event) => event.end_time.slice(0, 5) > event.start_time.slice(0, 5),
+  {
+    message: 'End time must be later than start time.',
+    path: ['end_time'],
+  },
+);
 
 const attendanceScanSchema = z.object({
   student_id: z.coerce.number().int().positive().optional(),

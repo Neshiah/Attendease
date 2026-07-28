@@ -389,6 +389,53 @@ textarea {
   font-weight: 800;
 }
 
+.time-field {
+  align-content: start;
+}
+
+.time-field > span {
+  display: block;
+}
+
+.time-field input[type="time"] {
+  color-scheme: light;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-field input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  height: 20px;
+  opacity: .8;
+  width: 20px;
+}
+
+.time-format-preview {
+  align-items: center;
+  color: var(--primary-dark);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.time-format-preview::before {
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  content: "";
+  height: 11px;
+  width: 11px;
+}
+
+.event-schedule {
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme="dark"] .time-field input[type="time"] {
+  color-scheme: dark;
+}
+
 .badge {
   border-radius: 999px;
   display: inline-block;

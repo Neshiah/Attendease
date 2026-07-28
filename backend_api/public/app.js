@@ -432,8 +432,22 @@ function formatDateOnly(value) {
 function formatDateTime(value) {
   const date = parseDisplayDate(value);
   return date
-    ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+    ? new Intl.DateTimeFormat('en-PH', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      hour12: true,
+    }).format(date)
     : (value || 'Time unavailable');
+}
+
+function formatTime12(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return value || 'Time unavailable';
+  const hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return value;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${match[2]} ${period}`;
 }
 
 function searchable(text) {
@@ -2158,7 +2172,7 @@ function eventFeedCard(row) {
         <div class="actions">${badge(row.status)} ${badge(row.event_type || 'event')}</div>
         <h3>${esc(row.title)}</h3>
         <p>${esc(row.description || '')}</p>
-        <p class="muted">${esc(row.event_date)} ${esc(row.start_time)}-${esc(row.end_time)} | ${esc(row.venue)} | ${row.points} pts</p>
+        <p class="muted event-schedule">${esc(formatDateOnly(row.event_date))} | ${esc(formatTime12(row.start_time))} - ${esc(formatTime12(row.end_time))} | ${esc(row.venue)} | ${row.points} pts</p>
         <div class="comment-list hidden" id="event-comments-${row.id}"></div>
       </div>
       <div class="actions hub-actions">
@@ -2242,8 +2256,16 @@ function eventFormHtml(row = null, settings = { default_event_points: 10 }) {
         <label>Event Type <input name="event_type" value="${esc(row?.event_type || 'Seminar')}" required /></label>
         <label>Date <input name="event_date" type="date" value="${esc((row?.event_date || new Date().toISOString().slice(0, 10)).toString().slice(0, 10))}" required /></label>
         <label>Venue <input name="venue" value="${esc(row?.venue || 'Campus')}" required /></label>
-        <label>Start Time <input name="start_time" value="${esc((row?.start_time || '08:00').toString().slice(0, 5))}" required /></label>
-        <label>End Time <input name="end_time" value="${esc((row?.end_time || '23:59').toString().slice(0, 5))}" required /></label>
+        <label class="time-field">
+          <span>Start Time</span>
+          <input name="start_time" type="time" step="60" value="${esc((row?.start_time || '08:00').toString().slice(0, 5))}" aria-describedby="startTimePreview" title="Open start time clock picker" required />
+          <small class="time-format-preview" id="startTimePreview" data-time-preview="start_time">${esc(formatTime12(row?.start_time || '08:00'))}</small>
+        </label>
+        <label class="time-field">
+          <span>End Time</span>
+          <input name="end_time" type="time" step="60" value="${esc((row?.end_time || '17:00').toString().slice(0, 5))}" aria-describedby="endTimePreview" title="Open end time clock picker" required />
+          <small class="time-format-preview" id="endTimePreview" data-time-preview="end_time">${esc(formatTime12(row?.end_time || '17:00'))}</small>
+        </label>
         <label>Points <input name="points" type="number" value="${esc(row?.points ?? settings.default_event_points ?? 10)}" min="0" required /></label>
         <label>Automatic Status <input value="${esc(row?.status || 'Based on event schedule')}" disabled /></label>
       </div>
@@ -2257,7 +2279,9 @@ function eventFormHtml(row = null, settings = { default_event_points: 10 }) {
 }
 
 function bindEventForm(rows) {
-  document.querySelector('#eventForm').addEventListener('submit', async (event) => {
+  const form = document.querySelector('#eventForm');
+  bindEventTimePickers(form);
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
       const data = formData(event.currentTarget);
@@ -2299,13 +2323,29 @@ function bindEventForm(rows) {
   });
 }
 
+function bindEventTimePickers(form) {
+  const startInput = form.querySelector('input[name="start_time"]');
+  const endInput = form.querySelector('input[name="end_time"]');
+  const updateTimes = () => {
+    form.querySelector('[data-time-preview="start_time"]').textContent = formatTime12(startInput.value);
+    form.querySelector('[data-time-preview="end_time"]').textContent = formatTime12(endInput.value);
+    const rangeIsValid = !startInput.value || !endInput.value || endInput.value > startInput.value;
+    endInput.setCustomValidity(rangeIsValid ? '' : 'End time must be later than start time.');
+  };
+  startInput.addEventListener('input', updateTimes);
+  startInput.addEventListener('change', updateTimes);
+  endInput.addEventListener('input', updateTimes);
+  endInput.addEventListener('change', updateTimes);
+  updateTimes();
+}
+
 function eventCard(row) {
   return `
     <article class="record" data-search-row="${searchable(`${row.title} ${row.description} ${row.venue} ${row.status} ${row.event_type}`)}">
       <div>
         <h3>${esc(row.title)}</h3>
         <p>${esc(row.description || '')}</p>
-        <p class="muted">${esc(row.event_date)} ${esc(row.start_time)}-${esc(row.end_time)} | ${esc(row.venue)} | ${row.points} pts</p>
+        <p class="muted event-schedule">${esc(formatDateOnly(row.event_date))} | ${esc(formatTime12(row.start_time))} - ${esc(formatTime12(row.end_time))} | ${esc(row.venue)} | ${row.points} pts</p>
       </div>
       <div class="actions">
         ${badge(row.status)}
@@ -2340,7 +2380,7 @@ async function renderQr() {
         const data = await api(`/events/${button.dataset.qr}/qr`);
         document.querySelector(`#qr-${button.dataset.qr}`).innerHTML = `
           <img class="qr" src="${data.image}" alt="Event QR" />
-          <p class="hint">Expires exactly at event end time: ${esc(data.expires_at || 'event end time')}</p>
+          <p class="hint">Expires exactly at event end time: ${esc(formatDateTime(data.expires_at))}</p>
           ${data.attendance_code ? `
             <p class="hint">Attendance code for manual entry (admin only):</p>
             <div class="copy-code">${esc(data.attendance_code)}</div>
