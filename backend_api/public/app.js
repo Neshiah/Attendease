@@ -1047,9 +1047,6 @@ function renderShell() {
     <section class="app-shell role-${esc(state.user.role)} ${state.user.role === 'student' ? 'student-app-shell' : ''}">
       <header class="topbar">
         <div class="topbar-brand">
-          <button class="nav-toggle" id="navToggle" type="button" aria-label="Open navigation" aria-expanded="false">
-            <span></span><span></span><span></span>
-          </button>
           <h1>${brandLogo('AR', 'dot')} <span>${esc(cachedBranding?.app_name || 'Student Attendance Rewards')}</span></h1>
         </div>
         <div class="topbar-actions">
@@ -1140,7 +1137,7 @@ function bindShellControls() {
   const closeNavigation = () => {
     closeShellNavigation();
   };
-  navToggle.addEventListener('click', () => {
+  navToggle?.addEventListener('click', () => {
     const open = shell.classList.toggle('nav-open');
     navToggle.setAttribute('aria-expanded', String(open));
     navScrim.classList.toggle('hidden', !open);

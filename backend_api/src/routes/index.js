@@ -844,9 +844,16 @@ router.delete('/events/:id', authenticate, authorize('admin'), validate(idParam,
 }));
 
 router.get('/events/:id/qr', authenticate, authorize('admin', 'organizer'), validate(idParam, 'params'), asyncHandler(async (req, res) => {
-  const [[event]] = await pool.query('SELECT id, title, qr_code, event_date, end_time FROM events WHERE id = ?', [req.params.id]);
+  const [[event]] = await pool.query(
+    `SELECT id, title, qr_code, DATE_FORMAT(event_date, '%Y-%m-%d') AS event_date, end_time
+     FROM events
+     WHERE id = ?`,
+    [req.params.id],
+  );
   if (!event) return res.status(404).json({ message: 'Event not found.' });
-  const expiresAt = new Date(`${String(event.event_date).slice(0, 10)}T${String(event.end_time || '00:00').slice(0, 5)}:00`).toISOString();
+  const expiresAt = new Date(
+    `${event.event_date}T${String(event.end_time || '00:00').slice(0, 5)}:00+08:00`,
+  ).toISOString();
   const dataUrl = await QRCode.toDataURL(JSON.stringify({ event_id: event.id, qr_code: event.qr_code, expires_at: expiresAt }));
   const response = { event_id: event.id, title: event.title, qr_code: event.qr_code, expires_at: expiresAt, image: dataUrl };
   if (req.user.role === 'admin') {
@@ -1360,8 +1367,12 @@ router.get('/reports/attendance', authenticate, authorize('admin', 'organizer'),
 
 router.get('/reports/feedback', authenticate, authorize('admin', 'organizer'), asyncHandler(async (req, res) => {
   const [rows] = await pool.query(
-    `SELECT event_id, COUNT(*) AS responses, ROUND(AVG((q1 + q2 + q3 + q4 + q5) / 5), 2) AS average_rating
-     FROM feedback GROUP BY event_id ORDER BY event_id DESC`,
+    `SELECT f.event_id, e.title, COUNT(*) AS responses,
+            ROUND(AVG((f.q1 + f.q2 + f.q3 + f.q4 + f.q5) / 5), 2) AS average_rating
+     FROM feedback f
+     JOIN events e ON e.id = f.event_id
+     GROUP BY f.event_id, e.title
+     ORDER BY f.event_id DESC`,
   );
   res.json(rows);
 }));

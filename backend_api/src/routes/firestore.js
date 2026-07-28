@@ -53,7 +53,7 @@ function now() {
 }
 
 function dateTime(date, time) {
-  return new Date(`${String(date).slice(0, 10)}T${String(time || '00:00').slice(0, 5)}:00`);
+  return new Date(`${String(date).slice(0, 10)}T${String(time || '00:00').slice(0, 5)}:00+08:00`);
 }
 
 function eventStatus(event) {
