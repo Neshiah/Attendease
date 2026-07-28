@@ -5383,3 +5383,75 @@ button.secondary.is-loading::after {
     grid-column: 1 / -1;
   }
 }
+
+/* Stable responsive header sizing */
+@media (max-width: 767px) {
+  .topbar {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .topbar-brand {
+    flex: 0 0 auto;
+    gap: 8px;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .topbar-brand h1 {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .topbar-brand .brand-dot {
+    flex: 0 0 38px;
+  }
+
+  .topbar-actions,
+  .role-admin .topbar-actions,
+  .role-organizer .topbar-actions,
+  .role-printing_staff .topbar-actions {
+    display: flex;
+    flex: 0 1 auto;
+    justify-content: flex-end;
+    margin-left: auto;
+    min-width: 0;
+  }
+
+  .profile-menu {
+    min-width: 0;
+  }
+
+  .profile-pill {
+    max-width: min(190px, calc(100vw - 132px));
+    min-width: 0;
+  }
+}
+
+@media (max-width: 479px) {
+  .topbar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .profile-pill {
+    gap: 0;
+    justify-content: center;
+    max-width: 48px;
+    padding: 5px;
+    width: 48px;
+  }
+
+  .profile-copy,
+  .profile-chevron {
+    display: none;
+  }
+
+  .points-chip {
+    flex: 0 0 auto;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
