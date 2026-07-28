@@ -5,24 +5,49 @@ function privateKey() {
   return (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 }
 
+function cleanPrivateKey(value) {
+  return String(value || '').trim().replace(/\\n/g, '\n');
+}
+
 function projectId() {
   const value = String(process.env.FIREBASE_PROJECT_ID || '').trim();
   const match = value.match(/projects\/\s*([^/]+)/);
   return match ? match[1].trim() : value;
 }
 
+function normalizeServiceAccount(account = {}) {
+  const normalized = {
+    projectId: String(account.projectId || account.project_id || projectId()).trim(),
+    clientEmail: String(
+      account.clientEmail
+      || account.client_email
+      || process.env.FIREBASE_CLIENT_EMAIL
+      || '',
+    ).trim(),
+    privateKey: cleanPrivateKey(
+      account.privateKey
+      || account.private_key
+      || privateKey(),
+    ),
+  };
+  const missing = Object.entries(normalized)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length) {
+    throw new Error(`Firebase service account is incomplete. Missing: ${missing.join(', ')}.`);
+  }
+  return normalized;
+}
+
 function serviceAccount() {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
-    return JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'));
+    const decoded = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8');
+    return normalizeServiceAccount(JSON.parse(decoded));
   }
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    return normalizeServiceAccount(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT));
   }
-  return {
-    projectId: projectId(),
-    clientEmail: String(process.env.FIREBASE_CLIENT_EMAIL || '').trim(),
-    privateKey: privateKey(),
-  };
+  return normalizeServiceAccount();
 }
 
 if (!getApps().length) {
